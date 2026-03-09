@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <None Include="..\..\.vsconfig" />
+    <Filter Include="Config">
+      <UniqueIdentifier>{FA535FFB-25E1-3D20-B416-52F9BE21E06E}</UniqueIdentifier>
+    </Filter>
+    <None Include="..\..\Config\DefaultEditor.ini">
+      <Filter>Config</Filter>
+    </None>
+    <None Include="..\..\Config\DefaultEngine.ini">
+      <Filter>Config</Filter>
+    </None>
+    <None Include="..\..\Config\DefaultGame.ini">
+      <Filter>Config</Filter>
+    </None>
+    <None Include="..\..\Config\DefaultInput.ini">
+      <Filter>Config</Filter>
+    </None>
+    <Filter Include="Source">
+      <UniqueIdentifier>{F31BBDD1-B3E8-3BCC-9652-680E16935819}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\VoxelModule">
+      <UniqueIdentifier>{E360ED23-CBC4-3534-B176-8D15227E96D3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\VoxelModule\Private">
+      <UniqueIdentifier>{1566FDF4-13C1-39B0-9753-0D1C30F8BD46}</UniqueIdentifier>
+    </Filter>
+    <ClCompile Include="..\..\Source\VoxelModule\Private\ChunckBacker.cpp">
+      <Filter>Source\VoxelModule\Private</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\VoxelModule\Private\FVoxelDataStructure.cpp">
+      <Filter>Source\VoxelModule\Private</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\VoxelModule\Private\FVoxelMaterial.cpp">
+      <Filter>Source\VoxelModule\Private</Filter>
+    </ClCompile>
+    <Filter Include="Source\VoxelModule\Public">
+      <UniqueIdentifier>{5CC07D62-5666-3D0F-981A-6900D3E93D08}</UniqueIdentifier>
+    </Filter>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckBacker.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\ChunckManager.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckManager.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\EVoxelAxis.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\FChunckDataStructure.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckDataStructure.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckMeshData.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FVoxelDataStructure.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FVoxelMaterial.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <Filter Include="Source\VoxelModule\Public\Structs">
+      <UniqueIdentifier>{04067166-BD33-381A-9AE7-A067CB61658D}</UniqueIdentifier>
+    </Filter>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\Structs\FQuad.h">
+      <Filter>Source\VoxelModule\Public\Structs</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\VoxelChunck.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\VoxelChunck.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\VoxelMaterialProperties.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\VoxelMaterialProperties.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\VoxelModule.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\VoxelModule.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <None Include="..\..\Source\VoxelModule\VoxelModule.Build.cs">
+      <Filter>Source\VoxelModule</Filter>
+    </None>
+    <None Include="..\..\Source\VoxelTest.Target.cs">
+      <Filter>Source</Filter>
+    </None>
+    <None Include="..\..\Source\VoxelTestEditor.Target.cs">
+      <Filter>Source</Filter>
+    </None>
+    <Filter Include="Source\VoxelTest">
+      <UniqueIdentifier>{D081C182-AB15-3CDB-A1E3-45A14363D447}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source\VoxelTest\Components">
+      <UniqueIdentifier>{6513DF44-2C51-33C4-A41E-983F9816075D}</UniqueIdentifier>
+    </Filter>
+    <ClCompile Include="..\..\Source\VoxelTest\Components\PlayerControllerComponent.cpp">
+      <Filter>Source\VoxelTest\Components</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelTest\Components\PlayerControllerComponent.h">
+      <Filter>Source\VoxelTest\Components</Filter>
+    </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelTest\VoxelGameMode.cpp">
+      <Filter>Source\VoxelTest</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelTest\VoxelGameMode.h">
+      <Filter>Source\VoxelTest</Filter>
+    </ClInclude>
+    <None Include="..\..\Source\VoxelTest\VoxelTest.Build.cs">
+      <Filter>Source\VoxelTest</Filter>
+    </None>
+    <ClCompile Include="..\..\Source\VoxelTest\VoxelTest.cpp">
+      <Filter>Source\VoxelTest</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelTest\VoxelTest.h">
+      <Filter>Source\VoxelTest</Filter>
+    </ClInclude>
+    <None Include="..\..\VoxelTest.uproject" />
+  </ItemGroup>
+</Project>

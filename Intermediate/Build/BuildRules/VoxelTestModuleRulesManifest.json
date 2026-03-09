@@ -1,0 +1,9 @@
+{
+	"SourceFiles": [
+		"C:\\Users\\natha\\Documents\\Unreal Projects\\VoxelTest\\Source\\VoxelModule\\VoxelModule.Build.cs",
+		"C:\\Users\\natha\\Documents\\Unreal Projects\\VoxelTest\\Source\\VoxelTest\\VoxelTest.Build.cs",
+		"C:\\Users\\natha\\Documents\\Unreal Projects\\VoxelTest\\Source\\VoxelTest.Target.cs",
+		"C:\\Users\\natha\\Documents\\Unreal Projects\\VoxelTest\\Source\\VoxelTestEditor.Target.cs"
+	],
+	"EngineVersion": "5.7.3"
+}

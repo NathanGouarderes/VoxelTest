@@ -1,0 +1,14 @@
+{
+	"Targets": [
+		{
+			"Name": "VoxelTest",
+			"Path": "..\\Source\\VoxelTest.Target.cs",
+			"Type": "Game"
+		},
+		{
+			"Name": "VoxelTestEditor",
+			"Path": "..\\Source\\VoxelTestEditor.Target.cs",
+			"Type": "Editor"
+		}
+	]
+}
