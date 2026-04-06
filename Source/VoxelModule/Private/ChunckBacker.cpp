@@ -8,6 +8,9 @@ AChunckBacker::AChunckBacker()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMeshComponent"));
+	RootComponent = ProceduralMeshComponent;
+	ProceduralMeshComponent->bUseAsyncCooking = true;
 
 }
 
@@ -22,6 +25,7 @@ void AChunckBacker::BeginPlay()
 void AChunckBacker::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
 
 }
 

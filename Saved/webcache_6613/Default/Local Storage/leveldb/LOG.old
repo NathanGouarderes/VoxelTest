@@ -1,6 +1,5 @@
-2026/03/09-22:20:48.286 95c Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/MANIFEST-000001
-2026/03/09-22:20:48.295 95c Recovering log #10
-2026/03/09-22:20:48.297 95c Reusing old log C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/000010.log 
-2026/03/09-22:22:57.435 5ccc Level-0 table #14: started
-2026/03/09-22:22:57.444 5ccc Level-0 table #14: 65217 bytes OK
-2026/03/09-22:22:57.457 5ccc Delete type=0 #10
+2026/04/06-18:23:20.480 7848 Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/MANIFEST-000001
+2026/04/06-18:23:20.489 7848 Recovering log #86
+2026/04/06-18:23:20.490 7848 Level-0 table #88: started
+2026/04/06-18:23:20.498 7848 Level-0 table #88: 73060 bytes OK
+2026/04/06-18:23:20.503 7848 Delete type=0 #86
