@@ -103,37 +103,25 @@ void AVoxelChunck::AddQuad(FVector P0, FVector P1, FVector P2, FVector P3, FVect
 	MeshData.Vertices.Add(P2);
 	MeshData.Vertices.Add(P3);
 
-	// Calcul du vrai sens géométrique
+	// Calcul du vrai normal géométrique
 	FVector Edge1 = P1 - P0;
 	FVector Edge2 = P2 - P0;
-	FVector Cross = FVector::CrossProduct(Edge1, Edge2);
+	FVector TrueNormal = FVector::CrossProduct(Edge1, Edge2).GetSafeNormal();
 
-	bool bFlip = FVector::DotProduct(Cross, Normal) < 0;
+	// Toujours même winding (CCW)
+	MeshData.Triangles.Add(StartIndex + 0);
+	MeshData.Triangles.Add(StartIndex + 1);
+	MeshData.Triangles.Add(StartIndex + 2);
 
-	if (!bFlip)
-	{
-		MeshData.Triangles.Add(StartIndex + 0);
-		MeshData.Triangles.Add(StartIndex + 1);
-		MeshData.Triangles.Add(StartIndex + 2);
+	MeshData.Triangles.Add(StartIndex + 0);
+	MeshData.Triangles.Add(StartIndex + 2);
+	MeshData.Triangles.Add(StartIndex + 3);
 
-		MeshData.Triangles.Add(StartIndex + 0);
-		MeshData.Triangles.Add(StartIndex + 2);
-		MeshData.Triangles.Add(StartIndex + 3);
-	}
-	else
-	{
-		MeshData.Triangles.Add(StartIndex + 0);
-		MeshData.Triangles.Add(StartIndex + 2);
-		MeshData.Triangles.Add(StartIndex + 1);
-
-		MeshData.Triangles.Add(StartIndex + 0);
-		MeshData.Triangles.Add(StartIndex + 3);
-		MeshData.Triangles.Add(StartIndex + 2);
-	}
-
-	// Normales
+	// Normales calculées automatiquement
 	for (int i = 0; i < 4; i++)
-		MeshData.Normals.Add(Normal);
+	{
+		MeshData.Normals.Add(TrueNormal);
+	}
 
 	// UV
 	MeshData.UVs.Add(FVector2D(0, 0));
