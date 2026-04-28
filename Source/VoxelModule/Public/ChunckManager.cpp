@@ -5,24 +5,35 @@
 #include "FChunckDataStructure.h"
 #include "GameFramework/GameModeBase.h"  
 #include "Kismet/GameplayStatics.h"
+#include "HAL/PlatformMisc.h"
 #include "VoxelWorld.h"
 
 // Sets default values
-AChunckManager::AChunckManager()
+AChunckManager::AChunckManager():
+    SurfaceFrequency(0.026f)
+    , SurfaceAmplitude(80.0f)
+    , BaseHeight(108)
+    , CaveFrequency(0.038f)
+    , CaveThreshold(0.42f)
+    , SeaLevel(24)
 {
     // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
     PrimaryActorTick.bCanEverTick = true;
     VoxelWorld = nullptr;
     VoxelChunckClass = AVoxelChunck::StaticClass();
     bNeedUpdate = false;
+    MaxMeshJob = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
+    CurrentMeshJob = 0;
 }
 
 // Called when the game starts or when spawned
 void AChunckManager::BeginPlay()
 {
     Super::BeginPlay();
-    UE_LOG(LogTemp, Warning, TEXT("AChunckManager::BeginPlay() --> Spawné et lié par AVoxelWorld"));
+    MaxMeshJob = FMath::Clamp(NumThreads - 2, 2, 8);
 
+    NumThreads = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
+    MaxGenPerFrame = FMath::Clamp(NumThreads / 2, 2, 8);
 
     FTimerHandle Timer;
     GetWorld()->GetTimerManager().SetTimer(Timer, [this]()
@@ -31,12 +42,13 @@ void AChunckManager::BeginPlay()
             if (!Pawn) return;
 
             FVector Pos = Pawn->GetActorLocation();
-            Pos.Z += 200.f; // 🔥 hauteur safe
+            Pos.Z += 810.f; // 🔥 hauteur safe
 
             Pawn->SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
 
-            UE_LOG(LogTemp, Warning, TEXT("Player déplacé hors des chunks"));
         }, 0.5f, false);
+
+    InitNoise();
 
 }
 
@@ -48,8 +60,8 @@ void AChunckManager::Tick(float DeltaTime)
 
     // ===================================================================
     // 1. Mise à jour visibilité (lourde) → throttle 0.2s
-    // ===================================================================
-
+    // ==================================================================
+    
     if (!VoxelWorld)
     {
         TArray<AActor*> ActorsFound;
@@ -63,24 +75,11 @@ void AChunckManager::Tick(float DeltaTime)
         {
             return; // 🔥 BLOQUANT
         }
-    }
+    }  
+    
 
-
-    if (GetWorld()->GetTimeSeconds() - LastUpdateTime < 0.2f)
-    {
-        if (!VoxelWorld)
-        {
-            TArray<AActor*> ActorsFound;
-            UGameplayStatics::GetAllActorsOfClass(GetWorld(), AVoxelWorld::StaticClass(), ActorsFound);
-            if (ActorsFound.Num() > 0)
-            {
-                VoxelWorld = Cast<AVoxelWorld>(ActorsFound[0]);
-                if (VoxelWorld)
-                    UE_LOG(LogTemp, Warning, TEXT("VoxelWorld trouvé et lié !"));
-            }
-        }
-        return;
-    }
+    bool bDoVisibilityUpdate = (GetWorld()->GetTimeSeconds() - LastUpdateTime >= 0.2f);
+    
 
     // ===================================================================
     // 2. Mise à jour des chunks visibles (spawn / unload)
@@ -89,9 +88,25 @@ void AChunckManager::Tick(float DeltaTime)
     TSet<FIntVector> GlobalChunksToKeep;
     GetAllPlayerChunks(GlobalChunksToKeep);
 
-    if (bNeedUpdate || VoxelWorld->Chuncks.Num() < GlobalChunksToKeep.Num())
+    if (bDoVisibilityUpdate && (bNeedUpdate || VoxelWorld->Chuncks.Num() < GlobalChunksToKeep.Num()))
     {
         UpdateVisibleChunks(GlobalChunksToKeep);
+        LastUpdateTime = GetWorld()->GetTimeSeconds();
+    }
+    for (int i = 0; i < MaxGenPerFrame; i++)
+    {
+        FIntVector Coord;
+        if (!ChunckGenerationQueue.Dequeue(Coord))
+        {
+            break;
+        }
+        FChunckDataStructure* ChunckData = VoxelWorld->Chuncks.Find(Coord);
+        if (!ChunckData)
+        {
+            continue;
+        }
+        FillChunck(EChunkVariant::Full, Coord);
+        //DirtyChuncks.Add(Coord);
     }
 
     // ===================================================================
@@ -103,11 +118,8 @@ void AChunckManager::Tick(float DeltaTime)
         FVector PlayerPos = Pawn->GetActorLocation();
         int32 RebuildCount = 0;
 
-        TArray<FIntVector> DirtyToProcess;
-        DirtyToProcess.Reserve(DirtyChuncks.Num());
-
-        for (const FIntVector& Coord : DirtyChuncks)
-            DirtyToProcess.Add(Coord);
+        TArray<FIntVector> DirtyToProcess = DirtyChuncks.Array();
+        //DirtyToProcess.Reserve(DirtyChuncks.Num());
 
         DirtyToProcess.Sort([&](const FIntVector& A, const FIntVector& B)
             {
@@ -124,25 +136,54 @@ void AChunckManager::Tick(float DeltaTime)
             if (!DirtyChuncks.Contains(Coord))
                 continue;
 
-            DirtyChuncks.Remove(Coord);
 
             FChunckDataStructure* Chunck = VoxelWorld->Chuncks.Find(Coord);
-            if (Chunck && Chunck->VoxelChunck)
-            {
-                int32 DesiredLOD = GetLODForChunck(Coord, PlayerPos);
 
-                // On ne rebuild que si le LOD a changé OU si c'est la première fois
-                if (Chunck->VoxelChunck->CurrentLOD != DesiredLOD || Chunck->VoxelChunck->bIsDirty)
+            if (!Chunck || !Chunck->VoxelChunck || !Chunck->bIsChunckGenerated)
+            {
+                continue;
+            }
+            if (Chunck && IsValid(Chunck->VoxelChunck))
+            {
+                if (!Chunck->VoxelChunck->bIsQueued)
                 {
-                    Chunck->VoxelChunck->CurrentLOD = DesiredLOD;
-                    Chunck->VoxelChunck->GenerateAsyncGreedyMesh(1);  // ← on passe le LOD
-                    RebuildCount++;
+                    Chunck->VoxelChunck->bIsQueued = true;
+                    PendingMeshToApply.Enqueue(Chunck->VoxelChunck);
+                }
+                else
+                {
+                    UE_LOG(LogTemp, Warning, TEXT("Chunk deja queued: %s"), *Coord.ToString());
+                }
+                if (Chunck && Chunck->VoxelChunck)
+                {
+                    int32 DesiredLOD = GetLODForChunck(Coord, PlayerPos);
+
+                    // On ne rebuild que si le LOD a changé OU si c'est la première fois
+                    if (Chunck->VoxelChunck->CurrentLOD != DesiredLOD || Chunck->VoxelChunck->bIsDirty)
+                    {
+                        Chunck->VoxelChunck->CurrentLOD = DesiredLOD;
+                        Chunck->VoxelChunck->GenerateAsyncGreedyMesh();
+                        //PendingMeshToApply.Enqueue(Chunck->VoxelChunck);
+                        RebuildCount++;
+                    }
                 }
             }
+            DirtyChuncks.Remove(Coord);            
         }
     }
-
-    LastUpdateTime = GetWorld()->GetTimeSeconds();
+    while (CurrentMeshJob < MaxMeshJob && !PendingMeshToApply.IsEmpty())
+    {
+        //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::Tick(float DeltaTime) --> CurrentMeshJob : %d  MaxMeshJob %d"), CurrentMeshJob, MaxMeshJob);
+        AVoxelChunck* ChunckToProcess;
+        PendingMeshToApply.Dequeue(ChunckToProcess);
+        ChunckToProcess->bIsQueued = false;
+        if (!ChunckToProcess)
+        {
+            continue;
+        }
+        CurrentMeshJob++;
+        ChunckToProcess->GenerateAsyncGreedyMesh();
+    }
 }
 
 int32 AChunckManager::GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const
@@ -218,7 +259,6 @@ FIntVector AChunckManager::GetPlayerChunck(const FVector& PlayerPos) const
 
 void AChunckManager::RegisterDirtyChunk(FIntVector Coord)
 {
-    UE_LOG(LogTemp, Warning, TEXT("RegisterDirtyChunk : %s"), *Coord.ToString());
 
     if (!VoxelWorld)
     {
@@ -229,7 +269,7 @@ void AChunckManager::RegisterDirtyChunk(FIntVector Coord)
     if (VoxelWorld->Chuncks.Find(Coord))
     {
         DirtyChuncks.Add(Coord);
-        UE_LOG(LogTemp, Warning, TEXT(" RegisterDirtyChunk(FIntVector Coord)  → Chunk %s enfilé (existe dans la map)"), *Coord.ToString());
+        //UE_LOG(LogTemp, Warning, TEXT(" RegisterDirtyChunk(FIntVector Coord)  → Chunk %s enfilé (existe dans la map)"), *Coord.ToString());
     }
     else
     {
@@ -259,56 +299,113 @@ void AChunckManager::GenerateTerrain(FChunckDataStructure& Data, FIntVector Coor
         }
 }
 
+float AChunckManager::GetNoise(float WorldX, float WorldY)
+{
+    float Noise = 0.0f;
+    float Amplitude = 1.0f;
+    float Frequency = 1.0f;
+
+    for (int Octave = 0; Octave < 5; Octave++)
+    {
+        Noise += Amplitude * FMath::PerlinNoise2D(FVector2D(WorldX * Frequency, WorldY * Frequency));
+        Amplitude *= 0.5f;      // chaque octave est 2x plus petit
+        Frequency *= 2.0f;      // chaque octave est 2x plus détaillé
+    }
+    return Noise;
+}
+
+void AChunckManager::InitNoise()
+{
+    SurfaceNoise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+    SurfaceNoise.SetFrequency(SurfaceFrequency);
+    CaveNoise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+    CaveNoise.SetFrequency(CaveFrequency);
+}
+
+
+
 void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord)
 {
+    
     FChunckDataStructure* ChunckData = VoxelWorld->Chuncks.Find(Coord);
     if (!ChunckData) return;
-
-   // for (int i = 0; i < ChunckData->Voxels.Num(); i++)
-   // {
-    //    ChunckData->Voxels[i].Material.Id = 1;   // ← TOUT est solide
-    //}
-
-   // UE_LOG(LogTemp, Warning, TEXT("Chunk %s rempli en FULL SOLID pour test"), *Coord.ToString());
+    int32 TotalSize = ChunkSize * ChunkSize * ChunkSize;
     
-    if (!VoxelWorld)
-    {
-        UE_LOG(LogTemp, Error, TEXT("FillChunck → ChunckManager ou VoxelWorld nul !"));
-        return;
-    }
 
-    if (!ChunckData)
-    {
-        UE_LOG(LogTemp, Error, TEXT("FillChunck → ChunckData nul !"));
-        return;
-    }
+    Async(EAsyncExecution::ThreadPool, [this, Coord, TotalSize] {
 
-    for (int x = 0; x < ChunkSize; x++)
-    {
-        for (int y = 0; y < ChunkSize; y++)
+        // ================================
+        // 1. BUFFER LOCAL (THREAD SAFE)
+        // ================================
+
+
+        TArray<FVoxelDataStructure> LocalVoxel;
+        LocalVoxel.SetNumZeroed(TotalSize);
+
+        // ================================
+        // 2. CALCUL COMPLET (THREAD SAFE)
+        // ================================
+        for (int x = 0; x < ChunkSize; x++)
         {
-            // Coordonnées globales pour un terrain seamless
-            float WorldX = (Coord.X * ChunkSize + x) * 0.08f;  // 0.08 = belle taille de collines
-            float WorldY = (Coord.Y * ChunkSize + y) * 0.08f;
-
-            float Noise = FMath::PerlinNoise2D(FVector2D(WorldX, WorldY));
-
-            // Hauteur globale en voxels (pas en unités !)
-            int baseHeight = 100; //Niveau moyen du sol
-            int Amplitude = 80; //Taille des montagnes
-            int GlobalSurfaceHeight = baseHeight + FMath::FloorToInt(Noise * Amplitude);
-
-            for (int z = 0; z < ChunkSize; z++)
+            for (int y = 0; y < ChunkSize; y++)
             {
-                int Index = x + y * ChunkSize + z * ChunkSize * ChunkSize;
-                int GlobalZ = Coord.Z * ChunkSize + z;
+                // Coordonnées globales pour un terrain seamless
+                float WorldX = (Coord.X * ChunkSize + x) * SurfaceFrequency;
+                float WorldY = (Coord.Y * ChunkSize + y) * SurfaceFrequency;
+                float GlobalSurfaceNoiseValue = SurfaceNoise.GetNoise(WorldX, WorldY);
 
-                ChunckData->Voxels[Index].Material.Id = (GlobalZ < GlobalSurfaceHeight) ? 1 : 0;
+                // Hauteur globale en voxels (pas en unités !)
+
+                int GlobalSurfaceHeight = BaseHeight + FMath::FloorToInt(GlobalSurfaceNoiseValue * SurfaceAmplitude);
+
+                GlobalSurfaceHeight = FMath::Clamp(GlobalSurfaceHeight, 0, ChunkSize * 40); // max 4 chunks de hauteur
+
+                for (int z = 0; z < ChunkSize; z++)
+                {
+                    int Index = x + y * ChunkSize + z * ChunkSize * ChunkSize;
+                    int GlobalZ = Coord.Z * ChunkSize + z;
+
+                    bool IsSolid = (GlobalZ < GlobalSurfaceHeight);
+
+                    if (IsSolid)
+                    {
+                        float CaveNoiseValue = CaveNoise.GetNoise((Coord.X * ChunkSize + x) * CaveFrequency, (Coord.Y * ChunkSize + y) * CaveFrequency, GlobalZ * CaveFrequency);
+                        if (CaveNoiseValue > CaveThreshold)
+                        {
+                            IsSolid = false; //On creuse un trou
+                        }
+                    }
+
+                    if (!IsSolid && GlobalZ < SeaLevel)
+                    {
+                        LocalVoxel[Index].Material.Id = 0; //Remplacer par l'id de l'eau;
+                    }
+                    else
+                    {
+                            LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0; 
+                    }
+                }
             }
         }
-    }
-
-    UE_LOG(LogTemp, Warning, TEXT("Chunk %s rempli avec terrain (surface ~%d)"), *Coord.ToString(), 12);
+        AsyncTask(ENamedThreads::GameThread, [this, Coord, LocalVoxel = MoveTemp(LocalVoxel)]() mutable
+            {
+                if (!VoxelWorld)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord) → ChunckManager ou VoxelWorld nul !"));
+                    return;
+                }
+                FChunckDataStructure* ChunckData = VoxelWorld->Chuncks.Find(Coord);
+                if (!ChunckData)
+                {
+                    UE_LOG(LogTemp, Error, TEXT("AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord) → ChunckData nul !"));
+                    return;
+                }
+                ChunckData->Voxels = MoveTemp(LocalVoxel);
+                ChunckData->bIsChunckGenerated = true;
+                DirtyChuncks.Add(Coord);
+            });
+        });
+    
 }
     
 
@@ -342,7 +439,8 @@ void AChunckManager::SpawnChunk(FIntVector Coord)
     VoxelChunck->Coord = Coord;
 
     // 3️⃣ Fill
-    FillChunck(EChunkVariant::Full, Coord);
+    ChunckGenerationQueue.Enqueue(Coord);
+    //FillChunck(EChunkVariant::Full, Coord);
     //GenerateTerrain(NewData, Coord);
 
     APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
@@ -388,7 +486,7 @@ void AChunckManager::SpawnChunk(FIntVector Coord)
         
         //VoxelChunck->GenerateFacedMesh();
         //
-        DirtyChuncks.Add(Coord);
+        //DirtyChuncks.Add(Coord);
     }
 }
 
@@ -400,7 +498,6 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
         return;
     }
     int32 SpawnCount = 0;
-    UE_LOG(LogTemp, Warning, TEXT("AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep) --> size: %d"), ChunksToKeep.Num());
     TArray<FIntVector> SortedChunks = ChunksToKeep.Array();
 
     APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
@@ -408,10 +505,40 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 
     SortedChunks.Sort([&](const FIntVector& A, const FIntVector& B)
         {
+
+            FIntVector DeltaA = A - GetPlayerChunck(PlayerPos);
+            FIntVector DeltaB = B - GetPlayerChunck(PlayerPos);
+
+            // Priorité horizontale
+            int32 RingA = FMath::Max(FMath::Abs(DeltaA.X), FMath::Abs(DeltaA.Y));
+            int32 RingB = FMath::Max(FMath::Abs(DeltaB.X), FMath::Abs(DeltaB.Y));
+            //UE_LOG(LogTemp, Warning, TEXT("Ring A : %d ------------- Ring B : %d"), RingA, RingB);
+            if (RingA != RingB)
+            {
+                return RingA < RingB;
+            }
+            return FMath::Abs(DeltaA.Z) < FMath::Abs(DeltaB.Z);
+
+            /*
             FVector PosA = FVector(A) * ChunkSize * VoxelSize;
             FVector PosB = FVector(B) * ChunkSize * VoxelSize;
 
-            return FVector::DistSquared(PlayerPos, PosA) < FVector::DistSquared(PlayerPos, PosB);
+            float HorizontalDistA = FVector2D(PosA.X - PlayerPos.X, PosA.Y - PlayerPos.Y).SizeSquared();
+            float HorizontalDistB = FVector2D(PosB.X - PlayerPos.X, PosB.Y - PlayerPos.Y).SizeSquared();
+
+            if (FMath::Abs(HorizontalDistA - HorizontalDistB) > 0.1f)
+            {
+                return HorizontalDistA < HorizontalDistB;
+            }
+
+            float VerticalDistA = FMath::Square(PosA.Z - PlayerPos.Z);
+            float VerticalDistB = FMath::Square(PosB.Z - PlayerPos.Z);
+
+
+            //return FVector::DistSquared(PlayerPos, PosA) < FVector::DistSquared(PlayerPos, PosB);
+            return VerticalDistA < VerticalDistB;
+            */
+            
         });
     for (const FIntVector& Coord : SortedChunks)
     {
@@ -445,7 +572,6 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
         {
             VoxelWorld->Chuncks[Coord].VoxelChunck->Destroy();
         }
-
         VoxelWorld->Chuncks.Remove(Coord);
     }
 }

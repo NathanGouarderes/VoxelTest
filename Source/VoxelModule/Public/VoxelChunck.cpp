@@ -20,6 +20,7 @@ AVoxelChunck::AVoxelChunck()
 	ProceduralMeshComponent->bUseAsyncCooking = true;
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
+	bIsQueued = false;
 
 
 }
@@ -54,6 +55,8 @@ void AVoxelChunck::SetChunckManager(AChunckManager* Manager)
 
 void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 {
+	//UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData)"));
+
 	if (!ProceduralMeshComponent)
 	{
 		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData) --> ProceduralMeshComponent NULL"));
@@ -63,20 +66,34 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 	ProceduralMeshComponent->SetMaterial(0, nullptr);
 	if (MeshData.Vertices.Num() == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData) --> MeshData.Vertices.Num() == 0"));
+		//UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData) --> MeshData.Vertices.Num() == 0"));
 		ProceduralMeshComponent->ClearMeshSection(0);
 		return;
 	}
 	//ProceduralMeshComponent->ClearMeshSection(0);
-	UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> Chunk %s | Vertices: %d | Triangles: %d"), *Coord.ToString(), MeshData.Vertices.Num(), MeshData.Triangles.Num() / 3);
+	//UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> Chunk %s | Vertices: %d | Triangles: %d"), *Coord.ToString(), MeshData.Vertices.Num(), MeshData.Triangles.Num() / 3);
 	if (MeshData.Vertices.Num() > 60000)
 	{
-		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> !!! MESH TROP GROS (%d verts) - risque de crash mémoire !!!"), MeshData.Vertices.Num());
+		//UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> !!! MESH TROP GROS (%d verts) - risque de crash mémoire !!!"), MeshData.Vertices.Num());
 		return;
 	}
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) aborted: World is null"));
+		return;
+	}
+
+	APlayerController* PC = World->GetFirstPlayerController();
+	if (!PC)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) aborted: PlayerController null"));
+		return;
+	}
+
 	FVector ChunkWorldPos = FVector(Coord) * ChunckManager->ChunkSize * ChunckManager->VoxelSize;
-	FVector PlayerPos = GetWorld()->GetFirstPlayerController()->GetPawn()
-		? GetWorld()->GetFirstPlayerController()->GetPawn()->GetActorLocation()
+	FVector PlayerPos = PC->GetPawn()
+		? PC->GetPawn()->GetActorLocation()
 		: FVector::ZeroVector;
 
 	bool bCreateCollision = FVector::Dist(ChunkWorldPos, PlayerPos) < 6000.0f;  // 60 mètres
@@ -91,6 +108,11 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 		bCreateCollision
 	);
 	ProceduralMeshComponent->SetMeshSectionVisible(0, true);
+	if (MeshData.Vertices.Num() == 0)
+	{
+		bIsDirty = true;
+		return;
+	}
 	//UE_LOG(LogTemp, Warning, TEXT("Avant ApplyMesh - Vertices = %d | Triangles = %d"), MeshData.Vertices.Num(), MeshData.Triangles.Num());
 }
 
@@ -110,12 +132,12 @@ void AVoxelChunck::AddQuad(FVector P0, FVector P1, FVector P2, FVector P3, FVect
 
 	// Toujours même winding (CCW)
 	MeshData.Triangles.Add(StartIndex + 0);
-	MeshData.Triangles.Add(StartIndex + 1);
 	MeshData.Triangles.Add(StartIndex + 2);
+	MeshData.Triangles.Add(StartIndex + 1);
 
 	MeshData.Triangles.Add(StartIndex + 0);
-	MeshData.Triangles.Add(StartIndex + 2);
 	MeshData.Triangles.Add(StartIndex + 3);
+	MeshData.Triangles.Add(StartIndex + 2);
 
 	// Normales calculées automatiquement
 	for (int i = 0; i < 4; i++)
@@ -139,7 +161,7 @@ void AVoxelChunck::AddQuadZNegative(int x, int y, int z, int width, int height, 
 	FVector P2((x + width) * S, (y + height) * S, z * S);
 	FVector P3(x * S, (y + height) * S, z * S);
 
-	AddQuad(P0, P1, P2, P3, FVector(0, 0, -1), MeshData);
+	AddQuad(P0, P3, P2, P1, FVector(0, 0, -1), MeshData);
 }
 
 void AVoxelChunck::AddQuadZPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData)
@@ -150,7 +172,7 @@ void AVoxelChunck::AddQuadZPositive(int x, int y, int z, int width, int height, 
 	FVector P2((x + width) * S, (y + height) * S, (z + 1) * S);
 	FVector P3(x * S, (y + height) * S, (z + 1) * S);
 
-	AddQuad(P0, P1, P2, P3, FVector(0, 0, 1), MeshData);
+	AddQuad(P0, P3, P2, P1, FVector(0, 0, 1), MeshData);
 }
 
 void AVoxelChunck::AddQuadYPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData)
@@ -161,7 +183,7 @@ void AVoxelChunck::AddQuadYPositive(int x, int y, int z, int width, int height, 
 	FVector P2((x + width) * S, (y + 1) * S, (z + height) * S);
 	FVector P3(x * S, (y + 1) * S, (z + height) * S);
 
-	AddQuad(P0, P1, P2, P3, FVector(0, 1, 0), MeshData);
+	AddQuad(P0, P3, P2, P1, FVector(0, 1, 0), MeshData);
 }
 
 void AVoxelChunck::AddQuadYNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData)
@@ -172,7 +194,7 @@ void AVoxelChunck::AddQuadYNegative(int x, int y, int z, int width, int height, 
 	FVector P2((x + width) * S, y * S, (z + height) * S);
 	FVector P3(x * S, y * S, (z + height) * S);
 
-	AddQuad(P0, P1, P2, P3, FVector(0, -1, 0), MeshData);
+	AddQuad(P0, P3, P2, P1, FVector(0, -1, 0), MeshData);
 }
 
 void AVoxelChunck::AddQuadXPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData)
@@ -200,36 +222,45 @@ void AVoxelChunck::AddQuadXNegative(int x, int y, int z, int width, int height, 
 
 void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 {
+	if (!IsValid(this))
+	{
+		return;
+	}
 	if (!ChunckManager || !ChunckManager->VoxelWorld)
 		return;
 
-	const FIntVector CurrentCoord = Coord;
-	const int32 LOD = InLOD;
-
-	const FChunckDataStructure* CD = ChunckManager->VoxelWorld->Chuncks.Find(CurrentCoord);
-	if (!CD)
-	{
-		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::GenerateAsyncGreedyMesh(): CD non trouvé pour %s"), *CurrentCoord.ToString());
+	const FChunckDataStructure* CD = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
+	if (!CD || CD->Voxels.Num() == 0)
 		return;
-	}
 
 	TArray<FVoxelDataStructure> LocalVoxels = CD->Voxels;
 
-	Async(EAsyncExecution::ThreadPool, [this, LocalVoxels = MoveTemp(LocalVoxels), CurrentCoord, LOD]() mutable
+	Async(EAsyncExecution::ThreadPool, [this, LocalVoxels = MoveTemp(LocalVoxels)]() mutable
 		{
 			FChunckMeshData MeshData;
-			GenerateGreedyMesh(MeshData, LocalVoxels, LOD);
+			GenerateGreedyMesh(MeshData, LocalVoxels);
 
-			AsyncTask(ENamedThreads::GameThread, [this, MeshData = MoveTemp(MeshData)]()
+			AsyncTask(ENamedThreads::GameThread, [this, MeshData = MoveTemp(MeshData)]() mutable
 				{
-					ApplyMesh(MeshData);
-				});
-			//UE_LOG(LogTemp, Warning, TEXT("GenerateGreedyMesh terminé pour chunk %s | LOD=%d | Vertices générés = %d"), *CurrentCoord.ToString(), LOD, MeshData.Vertices.Num());
-		});
+					if (IsValid(this))
+					{
+						ApplyMesh(MeshData);
+					}
 
+					if (ChunckManager)
+					{
+						ChunckManager->CurrentMeshJob = FMath::Max(0, ChunckManager->CurrentMeshJob - 1);
+					}
+					if (MeshData.Vertices.Num() == 0)
+					{
+						ChunckManager->PendingMeshToApply.Enqueue(this);
+					}
+					bIsQueued = false;
+				});
+		});
 }
 
-void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 LOD /*= 0*/)
+void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels)
 {
 	MeshData.Vertices.Empty();
 	MeshData.Triangles.Empty();
@@ -238,414 +269,166 @@ void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FV
 	MeshData.VertexColors.Empty();
 	MeshData.Tangents.Empty();
 
-	int32 Step = 1 << LOD;  // LOD 0=1, 1=2, 2=4, 3=8
+	int32 VertexCount = 0;
 
-	GenerateGreedyXPlan(true, MeshData, LocalVoxels, Step);
-	GenerateGreedyXPlan(false, MeshData, LocalVoxels, Step);
-	GenerateGreedyYPlan(true, MeshData, LocalVoxels, Step);
-	GenerateGreedyYPlan(false, MeshData, LocalVoxels, Step);
-	GenerateGreedyZPlan(true, MeshData, LocalVoxels, Step);
-	GenerateGreedyZPlan(false, MeshData, LocalVoxels, Step);
-
-	int SolidCount = 0;
-	for (auto& V : LocalVoxels)
+	// Sweep sur les 3 axes (X, Y, Z)
+	for (int32 Axis = 0; Axis < 3; ++Axis)
 	{
-		if (V.Material.Id > 0)
-			SolidCount++;
-	}
+		const int32 Axis1 = (Axis + 1) % 3;
+		const int32 Axis2 = (Axis + 2) % 3;
 
-	UE_LOG(LogTemp, Warning, TEXT("SOLID VOXELS = %d"), SolidCount);
-}
+		FIntVector AxisMask = FIntVector::ZeroValue;
+		AxisMask[Axis] = 1;
 
-// ====================== X AXIS ======================
-void AVoxelChunck::GenerateGreedyXPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	if (IsPositive) GenerateGreedyXPositive(MeshData, LocalVoxels, Step);
-	else            GenerateGreedyXNegative(MeshData, LocalVoxels, Step);
-}
+		TArray<FMask> Mask;
+		Mask.SetNum(Size * Size);
 
-void AVoxelChunck::GenerateGreedyXPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
+		FIntVector ChunkItr = FIntVector::ZeroValue;
 
-	for (int x = 0; x < Size; x += Step)
-	{
-		BuildMaskXPositive(x, Mask, LocalVoxels, Step);   // mask rempli correctement
-		Greedy2DX(x, Mask, true, MeshData, Step);
-	}
-}
-
-void AVoxelChunck::GenerateGreedyXNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
-
-	for (int x = 0; x < Size; x += Step)
-	{
-		BuildMaskXNegative(x, Mask, LocalVoxels, Step);
-		Greedy2DX(x, Mask, false, MeshData, Step);
-	}
-}
-
-void AVoxelChunck::Greedy2DX(int x, TArray<bool>& Mask, bool IsPositive, FChunckMeshData& MeshData, int32 Step)
-{
-	for (int z = 0; z < Size; z += Step)
-	{
-		int y = 0;
-		while (y < Size)
+		for (ChunkItr[Axis] = -1; ChunkItr[Axis] < Size;)
 		{
-			int index = y * Size + z;
-			if (!Mask[index])
-			{
-				y += Step;
-				continue;
-			}
+			int32 N = 0;
 
-			// Largeur along Y
-			int width = 1;
-			while (y + width * Step < Size && Mask[(y + width * Step) * Size + z])
-				width++;
-
-			// Hauteur along Z
-			int height = 1;
-			bool done = false;
-			while (z + height * Step < Size && !done)
+			// === 1. Construire le Mask ===
+			for (ChunkItr[Axis2] = 0; ChunkItr[Axis2] < Size; ++ChunkItr[Axis2])
 			{
-				for (int k = 0; k < width; k++)
+				for (ChunkItr[Axis1] = 0; ChunkItr[Axis1] < Size; ++ChunkItr[Axis1])
 				{
-					if (!Mask[(y + k * Step) * Size + (z + height * Step)])
+					const bool CurrentSolid = IsVoxelSolidLocal(ChunkItr.X, ChunkItr.Y, ChunkItr.Z, LocalVoxels);
+					const bool CompareSolid = IsVoxelSolidLocal(ChunkItr.X + AxisMask.X,ChunkItr.Y + AxisMask.Y, ChunkItr.Z + AxisMask.Z, LocalVoxels);
+
+					if (CurrentSolid == CompareSolid)
 					{
-						done = true;
-						break;
+						Mask[N++] = FMask{ 0, 0 };
+					}
+					else if (CurrentSolid)
+					{
+						Mask[N++] = FMask{ 1, 1 };
+					}
+					else
+					{
+						Mask[N++] = FMask{ 1, -1 };
 					}
 				}
-				if (!done) height++;
 			}
 
-			// Marquer comme traité
-			for (int dz = 0; dz < height; dz++)
-				for (int dy = 0; dy < width; dy++)
-					Mask[(y + dy * Step) * Size + (z + dz * Step)] = false;
+			++ChunkItr[Axis];
+			N = 0;
 
-			// Ajouter le quad
-			if (IsPositive)
-				AddQuadXPositive(x, y, z, width * Step, height * Step, MeshData);
-			else
-				AddQuadXNegative(x, y, z, width * Step, height * Step, MeshData);
+			// === 2. Générer les quads à partir du Mask ===
+			for (int32 j = 0; j < Size; ++j)
+			{
+				for (int32 i = 0; i < Size;)
+				{
+					if (Mask[N].Normal != 0)
+					{
+						const FMask CurrentMask = Mask[N];
 
-			y += width * Step;
+						ChunkItr[Axis1] = i;
+						ChunkItr[Axis2] = j;
+
+						// Largeur
+						int32 Width = 1;
+						while (i + Width < Size && CompareMask(Mask[N + Width], CurrentMask))
+							++Width;
+
+						// Hauteur
+						int32 Height = 1;
+						bool Done = false;
+						for (; Height + j < Size; ++Height)
+						{
+							for (int32 k = 0; k < Width; ++k)
+							{
+								if (!CompareMask(Mask[N + k + Height * Size], CurrentMask))
+								{
+									Done = true;
+									break;
+								}
+							}
+							if (Done) break;
+						}
+
+						// === Calcul propre des 4 coins du quad (remplace les ternaires foireux) ===
+						FIntVector V1 = ChunkItr;
+						FIntVector V2 = V1;  V2[Axis1] += Width;
+						FIntVector V3 = V1;  V3[Axis2] += Height;
+						FIntVector V4 = V2;  V4[Axis2] += Height;
+
+						// Créer le quad
+						CreateQuad(CurrentMask, AxisMask, Width, Height, V1, V2, V3, V4, VertexCount, MeshData);
+
+						// Marquer comme traité
+						for (int32 l = 0; l < Height; ++l)
+							for (int32 k = 0; k < Width; ++k)
+								Mask[N + k + l * Size] = FMask{ 0, 0 };
+
+						i += Width;
+						N += Width;
+						VertexCount += 4;
+					}
+					else
+					{
+						++i;
+						++N;
+					}
+				}
+			}
 		}
 	}
 }
 
-void AVoxelChunck::Greedy2DY(int y, TArray<bool>& Mask, bool IsPositive, FChunckMeshData& MeshData, int32 Step)
+void AVoxelChunck::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData)
 {
-	for (int z = 0; z < Size; z += Step)
+	const FVector Normal = FVector(AxisMask) * Mask.Normal * VoxelSize;
+
+	const int32 StartIndex = MeshData.Vertices.Num();
+
+	MeshData.Vertices.Append({ FVector(V1) * VoxelSize, FVector(V2) * VoxelSize,
+							   FVector(V3) * VoxelSize, FVector(V4) * VoxelSize });
+
+	// Winding automatique (le fameux trick +Mask.Normal / -Mask.Normal)
+	MeshData.Triangles.Append({
+		StartIndex + 0,
+		StartIndex + 2 + Mask.Normal,
+		StartIndex + 2 - Mask.Normal,
+		StartIndex + 3,
+		StartIndex + 1 - Mask.Normal,
+		StartIndex + 1 + Mask.Normal
+		});
+
+	MeshData.Normals.Append({ Normal, Normal, Normal, Normal });
+
+	// UVs scalées selon l'axe
+	if (AxisMask.X != 0) // faces X
 	{
-		int x = 0;
-		while (x < Size)
-		{
-			int index = x * Size + z;
-			if (!Mask[index])
-			{
-				x += Step;
-				continue;
-			}
-
-			int width = 1;   // along X
-			while (x + width * Step < Size && Mask[(x + width * Step) * Size + z])
-				width++;
-
-			int height = 1;  // along Z
-			bool done = false;
-			while (z + height * Step < Size && !done)
-			{
-				for (int k = 0; k < width; k++)
-				{
-					if (!Mask[(x + k * Step) * Size + (z + height * Step)])
-					{
-						done = true;
-						break;
-					}
-				}
-				if (!done) height++;
-			}
-
-			for (int dz = 0; dz < height; dz++)
-				for (int dx = 0; dx < width; dx++)
-					Mask[(x + dx * Step) * Size + (z + dz * Step)] = false;
-
-			if (IsPositive)
-				AddQuadYPositive(x, y, z, width * Step, height * Step, MeshData);
-			else
-				AddQuadYNegative(x, y, z, width * Step, height * Step, MeshData);
-
-			x += width * Step;
-		}
+		MeshData.UVs.Append({
+			FVector2D(0, 0),
+			FVector2D(Height, 0),
+			FVector2D(Height, Width),
+			FVector2D(0, Width)
+			});
 	}
-}
-
-void AVoxelChunck::Greedy2DZ(int z, TArray<bool>& Mask, bool IsPositive, FChunckMeshData& MeshData, int32 Step)
-{
-	for (int y = 0; y < Size; y += Step)
+	else // faces Y ou Z
 	{
-		int x = 0;
-		while (x < Size)
-		{
-			int index = x * Size + y;
-			if (!Mask[index])
-			{
-				x += Step;
-				continue;
-			}
-
-			int width = 1;   // along X
-			while (x + width * Step < Size && Mask[(x + width * Step) * Size + y])
-				width++;
-
-			int height = 1;  // along Y
-			bool done = false;
-			while (y + height * Step < Size && !done)
-			{
-				for (int k = 0; k < width; k++)
-				{
-					if (!Mask[(x + k * Step) * Size + (y + height * Step)])
-					{
-						done = true;
-						break;
-					}
-				}
-				if (!done) height++;
-			}
-
-			for (int dy = 0; dy < height; dy++)
-				for (int dx = 0; dx < width; dx++)
-					Mask[(x + dx * Step) * Size + (y + dy * Step)] = false;
-
-			if (IsPositive)
-				AddQuadZPositive(x, y, z, width * Step, height * Step, MeshData);
-			else
-				AddQuadZNegative(x, y, z, width * Step, height * Step, MeshData);
-
-			x += width * Step;
-		}
+		MeshData.UVs.Append({
+			FVector2D(0, 0),
+			FVector2D(Width, 0),
+			FVector2D(Width, Height),
+			FVector2D(0, Height)
+			});
 	}
+
+	VertexCount += 4;
 }
 
-// ====================== Y AXIS ======================
-void AVoxelChunck::GenerateGreedyYPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
+bool AVoxelChunck::CompareMask(const FMask& M1, const FMask& M2) const
 {
-	if (IsPositive) GenerateGreedyYPositive(MeshData, LocalVoxels, Step);
-	else            GenerateGreedyYNegative(MeshData, LocalVoxels, Step);
+	return M1.Block == M2.Block && M1.Normal == M2.Normal;
 }
-
-void AVoxelChunck::GenerateGreedyYPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
-
-	for (int y = 0; y < Size; y += Step)
-	{
-		BuildMaskYPositive(y, Mask, LocalVoxels, Step);
-		Greedy2DY(y, Mask, true, MeshData, Step);
-	}
-}
-
-void AVoxelChunck::GenerateGreedyYNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
-
-	for (int y = 0; y < Size; y += Step)
-	{
-		BuildMaskYNegative(y, Mask, LocalVoxels, Step);
-		Greedy2DY(y, Mask, false, MeshData, Step);
-	}
-}
-
-
-
-// ====================== Z AXIS ======================
-void AVoxelChunck::GenerateGreedyZPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	if (IsPositive) GenerateGreedyZPositive(MeshData, LocalVoxels, Step);
-	else            GenerateGreedyZNegative(MeshData, LocalVoxels, Step);
-}
-
-void AVoxelChunck::GenerateGreedyZPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
-
-	for (int z = 0; z < Size; z += Step)
-	{
-		BuildMaskZPositive(z, Mask, LocalVoxels, Step);
-		Greedy2DZ(z, Mask, true, MeshData, Step);
-	}
-}
-
-void AVoxelChunck::GenerateGreedyZNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-	TArray<bool> Mask;
-	Mask.Init(false, Size * Size);
-
-	for (int z = 0; z < Size; z += Step)
-	{
-		BuildMaskZNegative(z, Mask, LocalVoxels, Step);
-		Greedy2DZ(z, Mask, false, MeshData, Step);
-	}
-}
-
-void AVoxelChunck::BuildMaskXPositive(int x, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int y = 0; y < Size; y += Step)
-    {
-        for (int z = 0; z < Size; z += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (x + Step < Size) ? IsVoxelSolidLocal(x + Step, y, z, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[y * Size + z] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskXPositive(x=%d) → %d faces marquées"), x, Marked);
-}
-
-void AVoxelChunck::BuildMaskXNegative(int x, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int y = 0; y < Size; y += Step)
-    {
-        for (int z = 0; z < Size; z += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (x - Step >= 0) ? IsVoxelSolidLocal(x - Step, y, z, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[y * Size + z] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskXNegative(x=%d) → %d faces marquées"), x, Marked);
-}
-
-void AVoxelChunck::BuildMaskYPositive(int y, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int x = 0; x < Size; x += Step)
-    {
-        for (int z = 0; z < Size; z += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (y + Step < Size) ? IsVoxelSolidLocal(x, y + Step, z, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[x * Size + z] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskYPositive(y=%d) → %d faces marquées"), y, Marked);
-}
-
-void AVoxelChunck::BuildMaskYNegative(int y, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int x = 0; x < Size; x += Step)
-    {
-        for (int z = 0; z < Size; z += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (y - Step >= 0) ? IsVoxelSolidLocal(x, y - Step, z, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[x * Size + z] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskYNegative(y=%d) → %d faces marquées"), y, Marked);
-}
-
-void AVoxelChunck::BuildMaskZPositive(int z, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int x = 0; x < Size; x += Step)
-    {
-        for (int y = 0; y < Size; y += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (z + Step < Size) ? IsVoxelSolidLocal(x, y, z + Step, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[x * Size + y] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskZPositive(z=%d) → %d faces marquées"), z, Marked);
-}
-
-void AVoxelChunck::BuildMaskZNegative(int z, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step)
-{
-    int Marked = 0;
-    for (int x = 0; x < Size; x += Step)
-    {
-        for (int y = 0; y < Size; y += Step)
-        {
-            bool Current = IsVoxelSolidLocal(x, y, z, LocalVoxels);
-            bool Neighbor = (z - Step >= 0) ? IsVoxelSolidLocal(x, y, z - Step, LocalVoxels) : false;
-            bool Visible = Current && !Neighbor;
-
-            Mask[x * Size + y] = Visible;
-            if (Visible) Marked++;
-        }
-    }
-    if (Marked > 0)
-        UE_LOG(LogTemp, Warning, TEXT("BuildMaskZNegative(z=%d) → %d faces marquées"), z, Marked);
-}
-
-
 
 float AVoxelChunck::GetVoxelSize()
 {
 	return VoxelSize;
-}
-
-void AVoxelChunck::AddCube(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, 0));
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, S));
-
-	int32 Tris[] = {
-	  0,1,2, 0,2,3, // Bottom
-	  4,6,5, 4,7,6, // Top
-	  0,4,5, 0,5,1, // Front
-	  1,5,6, 1,6,2, // Right
-	  2,6,7, 2,7,3, // Back
-	  3,7,4, 3,4,0  // Left
-	};
-
-	for (int i = 0; i < 36; i++)
-	{
-		ChunckDataMesh.Triangles.Add(StartIndex + Tris[i]);
-	}
 }
 
 bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
@@ -693,7 +476,7 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 
 	const FChunckDataStructure* ChunkData = ChunckManager->VoxelWorld->Chuncks.Find(TargetCoord);
 	if (!ChunkData)
-		return true;                   // chunk non chargé = plein (correct)
+		return false;                   // chunk non chargé = plein (correct)
 
 	int index = lx + ly * Size + lz * Size * Size;
 	if (!ChunkData->Voxels.IsValidIndex(index))
@@ -715,270 +498,6 @@ bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDat
 	return LocalVoxels[index].Material.Id > 0;
 }
 
-void AVoxelChunck::AddRightFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, S));
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-
-
-}
-void AVoxelChunck::AddLeftFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, 0));
-
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-}
-
-void AVoxelChunck::AddFrontFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, 0));
-
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-}
-
-void AVoxelChunck::AddBackFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, S));
-
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-}
-
-void AVoxelChunck::AddBottomFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, 0));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, 0));
-
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-}
-void AVoxelChunck::AddTopFace(FVector Position)
-{
-	float S = VoxelSize;
-	int32 StartIndex = ChunckDataMesh.Vertices.Num();
-
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, 0, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(S, S, S));
-	ChunckDataMesh.Vertices.Add(Position + FVector(0, S, S));
-
-
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-	ChunckDataMesh.Triangles.Add(StartIndex + 1);
-
-	ChunckDataMesh.Triangles.Add(StartIndex + 0);
-	ChunckDataMesh.Triangles.Add(StartIndex + 3);
-	ChunckDataMesh.Triangles.Add(StartIndex + 2);
-
-	ChunckDataMesh.UVs.Add(FVector2D(0, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 0));
-	ChunckDataMesh.UVs.Add(FVector2D(1, 1));
-	ChunckDataMesh.UVs.Add(FVector2D(0, 1));
-}
-
-/*
-void AVoxelChunck::GenerateFacedMesh()
-{
-	ChunckDataMesh.Vertices.Empty();
-	ChunckDataMesh.Triangles.Empty();
-	ChunckDataMesh.Normals.Empty();
-	ChunckDataMesh.UVs.Empty();
-	for (int z = 0; z < Size; z++)
-	{
-		for (int y = 0; y < Size; y++)
-		{
-			for (int x = 0; x < Size; x++)
-			{
-				float S = VoxelSize;
-				FVector Pos = FVector(x * S, y * S, z * S);
-				if (IsVoxelSolid(x, y, z))
-				{
-					// Face droite
-					if (!IsVoxelSolid(x + 1, y, z))
-					{
-						AddRightFace(Pos);
-					}
-
-					// Face gauche
-					if (!IsVoxelSolid(x - 1, y, z))
-					{
-						AddLeftFace(Pos);
-					}
-
-					// Face avant
-					if (!IsVoxelSolid(x, y + 1, z))
-					{
-						AddFrontFace(Pos);
-					}
-
-					// Face arrière
-					if (!IsVoxelSolid(x, y - 1, z))
-					{
-						AddBackFace(Pos);
-					}
-
-					// Face haut
-					if (!IsVoxelSolid(x, y, z + 1))
-					{
-						AddTopFace(Pos);
-					}
-
-					// Face bas
-					if (!IsVoxelSolid(x, y, z - 1))
-					{
-						AddBottomFace(Pos);
-					}
-					//AddCube(Pos);
-				}
-			}
-		}
-
-		ProceduralMeshComponent->CreateMeshSection(
-			0,
-			ChunckDataMesh.Vertices,
-			ChunckDataMesh.Triangles,
-			ChunckDataMesh.Normals,
-			ChunckDataMesh.UVs,
-			ChunckDataMesh.VertexColors,
-			ChunckDataMesh.Tangents,
-			true
-		);
-	}
-}
-*/
-
-
-
-
-
-void AVoxelChunck::GenerateMesh()
-{
-	// Réinitialiser les tableaux
-	ChunckDataMesh.Vertices.Reset();
-	ChunckDataMesh.Triangles.Reset();
-	ChunckDataMesh.Normals.Reset();
-	ChunckDataMesh.UVs.Reset();
-
-	// Préalouer de la mémoire
-	ChunckDataMesh.Vertices.Reserve(2000);
-	ChunckDataMesh.Triangles.Reserve(4000);
-	ChunckDataMesh.Normals.Reserve(2000);
-	ChunckDataMesh.UVs.Reserve(2000);
-
-	// Tableau 3D pour le masque de voxels
-	bool VoxelMask[64][64][64] = { false };
-
-	// Remplir le masque
-	for (int x = 0; x < Size; x++)
-		for (int y = 0; y < Size; y++)
-			for (int z = 0; z < Size; z++)
-				VoxelMask[x][y][z] = IsVoxelSolid(x, y, z);
-
-
-	// Créer la section de mesh
-	if (ChunckDataMesh.Vertices.Num() > 0)
-	{
-		ProceduralMeshComponent->CreateMeshSection(
-			0,
-			ChunckDataMesh.Vertices,
-			ChunckDataMesh.Triangles,
-			ChunckDataMesh.Normals,
-			ChunckDataMesh.UVs,
-			TArray<FColor>(),
-			TArray<FProcMeshTangent>(),
-			true
-		);
-	}
-}
 
 
 void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)

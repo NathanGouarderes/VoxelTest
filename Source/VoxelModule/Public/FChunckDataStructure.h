@@ -11,11 +11,12 @@ struct FChunckDataStructure
 	TArray<FVoxelDataStructure> Voxels;
 	int8 ChunckSize = 64;
 	bool bIsDirty = true;	
+	bool bIsChunckGenerated;
 	AVoxelChunck* VoxelChunck;
 	FChunckDataStructure()
 	{
 		Voxels.SetNum(ChunckSize * ChunckSize * ChunckSize);
-		bool bIsGenerated = false;
+		bIsChunckGenerated = false;
 	}
 };
 

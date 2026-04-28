@@ -93,6 +93,60 @@ struct Z_Construct_UClass_AChunckManager_Statics
 		{ "Category", "Voxel | Performance" },
 		{ "ModuleRelativePath", "Public/ChunckManager.h" },
 	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_SurfaceFrequency_MetaData[] = {
+		{ "Category", "ChunckManager" },
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_SurfaceAmplitude_MetaData[] = {
+		{ "Category", "ChunckManager" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// 2D \xe2\x86\x92 collines larges et naturelles 0.006\n" },
+#endif
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "2D \xe2\x86\x92 collines larges et naturelles 0.006" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_BaseHeight_MetaData[] = {
+		{ "Category", "ChunckManager" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// hauteur des montagnes\n" },
+#endif
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "hauteur des montagnes" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveFrequency_MetaData[] = {
+		{ "Category", "ChunckManager" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// niveau moyen du sol\n" },
+#endif
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "niveau moyen du sol" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_CaveThreshold_MetaData[] = {
+		{ "Category", "ChunckManager" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// 3D \xe2\x86\x92 taille des grottes\n" },
+#endif
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "3D \xe2\x86\x92 taille des grottes" },
+#endif
+	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_SeaLevel_MetaData[] = {
+		{ "Category", "ChunckManager" },
+#if !UE_BUILD_SHIPPING
+		{ "Comment", "// plus bas = plus de grottes\n" },
+#endif
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+#if !UE_BUILD_SHIPPING
+		{ "ToolTip", "plus bas = plus de grottes" },
+#endif
+	};
 #endif // WITH_METADATA
 
 // ********** Begin Class AChunckManager constinit property declarations ***************************
@@ -106,6 +160,12 @@ struct Z_Construct_UClass_AChunckManager_Statics
 	static const UECodeGen_Private::FFloatPropertyParams NewProp_PlayerSpawnHeight;
 	static const UECodeGen_Private::FIntPropertyParams NewProp_MaxSpawnPerFrame;
 	static const UECodeGen_Private::FIntPropertyParams NewProp_MaxRebuildPerFrame;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_SurfaceFrequency;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_SurfaceAmplitude;
+	static const UECodeGen_Private::FIntPropertyParams NewProp_BaseHeight;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveFrequency;
+	static const UECodeGen_Private::FFloatPropertyParams NewProp_CaveThreshold;
+	static const UECodeGen_Private::FIntPropertyParams NewProp_SeaLevel;
 	static const UECodeGen_Private::FPropertyParamsBase* const PropPointers[];
 // ********** End Class AChunckManager constinit property declarations *****************************
 	static UObject* (*const DependentSingletons[])();
@@ -126,6 +186,12 @@ const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_St
 const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_PlayerSpawnHeight = { "PlayerSpawnHeight", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, PlayerSpawnHeight), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_PlayerSpawnHeight_MetaData), NewProp_PlayerSpawnHeight_MetaData) };
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxSpawnPerFrame = { "MaxSpawnPerFrame", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, MaxSpawnPerFrame), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_MaxSpawnPerFrame_MetaData), NewProp_MaxSpawnPerFrame_MetaData) };
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxRebuildPerFrame = { "MaxRebuildPerFrame", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, MaxRebuildPerFrame), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_MaxRebuildPerFrame_MetaData), NewProp_MaxRebuildPerFrame_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_SurfaceFrequency = { "SurfaceFrequency", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, SurfaceFrequency), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_SurfaceFrequency_MetaData), NewProp_SurfaceFrequency_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_SurfaceAmplitude = { "SurfaceAmplitude", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, SurfaceAmplitude), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_SurfaceAmplitude_MetaData), NewProp_SurfaceAmplitude_MetaData) };
+const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_BaseHeight = { "BaseHeight", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, BaseHeight), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_BaseHeight_MetaData), NewProp_BaseHeight_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_CaveFrequency = { "CaveFrequency", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, CaveFrequency), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveFrequency_MetaData), NewProp_CaveFrequency_MetaData) };
+const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_CaveThreshold = { "CaveThreshold", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, CaveThreshold), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveThreshold_MetaData), NewProp_CaveThreshold_MetaData) };
+const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_SeaLevel = { "SeaLevel", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, SeaLevel), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_SeaLevel_MetaData), NewProp_SeaLevel_MetaData) };
 const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AChunckManager_Statics::PropPointers[] = {
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelChunckClass,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelWorld,
@@ -137,6 +203,12 @@ const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AChunckMa
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_PlayerSpawnHeight,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxSpawnPerFrame,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxRebuildPerFrame,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_SurfaceFrequency,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_SurfaceAmplitude,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_BaseHeight,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_CaveFrequency,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_CaveThreshold,
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_SeaLevel,
 };
 static_assert(UE_ARRAY_COUNT(Z_Construct_UClass_AChunckManager_Statics::PropPointers) < 2048);
 // ********** End Class AChunckManager Property Definitions ****************************************
@@ -179,10 +251,10 @@ AChunckManager::~AChunckManager() {}
 struct Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics
 {
 	static constexpr FClassRegisterCompiledInInfo ClassInfo[] = {
-		{ Z_Construct_UClass_AChunckManager, AChunckManager::StaticClass, TEXT("AChunckManager"), &Z_Registration_Info_UClass_AChunckManager, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AChunckManager), 2042151809U) },
+		{ Z_Construct_UClass_AChunckManager, AChunckManager::StaticClass, TEXT("AChunckManager"), &Z_Registration_Info_UClass_AChunckManager, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AChunckManager), 2518021430U) },
 	};
 }; // Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics 
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_2633342243{
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_4286763032{
 	TEXT("/Script/VoxelModule"),
 	Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics::ClassInfo),
 	nullptr, 0,

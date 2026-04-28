@@ -13,6 +13,12 @@
 
 class AChunckManager;
 
+struct FMask
+{
+	int8 Block = 0;
+	int8 Normal = 0;
+};
+
 
 UCLASS()
 class VOXELMODULE_API AVoxelChunck : public AActor
@@ -31,11 +37,12 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;	
 	float GetVoxelSize();
-	void GenerateMesh();
 	//void GenerateFacedMesh();
-	void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 InLOD = 0);
+	void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
 	void GenerateAsyncGreedyMesh(int32 InLOD = 0);
 	void ApplyMesh(const FChunckMeshData& MeshData);
+	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData);
+	bool CompareMask(const FMask& M1, const FMask& M2) const;
 
 	void AddQuadXPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
 	void AddQuadXNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
@@ -45,35 +52,6 @@ public:
 	void AddQuadZNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
 	void AddQuad(FVector P0, FVector P1, FVector P2, FVector P3, FVector Normal, FChunckMeshData& MeshData);
 
-	void GenerateGreedyXPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyYPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyZPlan(bool IsPositive, FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-
-	void GenerateGreedyXPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyXNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyYPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyYNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyZPositive(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void GenerateGreedyZNegative(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-
-	void BuildMaskXPositive(int x, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void BuildMaskXNegative(int x, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void BuildMaskYPositive(int y, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void BuildMaskYNegative(int y, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void BuildMaskZPositive(int z, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-	void BuildMaskZNegative(int z, TArray<bool>& Mask, const TArray<FVoxelDataStructure>& LocalVoxels, int32 Step);
-
-	void Greedy2DX(int x, TArray<bool>& Mask, bool IsBositive, FChunckMeshData& MeshData, int32 Step);
-	void Greedy2DY(int y, TArray<bool>& Mask, bool IsPositive, FChunckMeshData& MeshData, int32 Step);
-	void Greedy2DZ(int z, TArray<bool>& Mask, bool IsPositive, FChunckMeshData& MeshData, int32 Step);
-
-	void AddCube(FVector Position);
-	void AddRightFace(FVector Position);
-	void AddTopFace(FVector Position);
-	void AddBackFace(FVector Position);
-	void AddBottomFace(FVector Position);
-	void AddLeftFace(FVector Position);
-	void AddFrontFace(FVector Position);
 
 
 	void RemoveVoxel(int X, int Y, int Z);
@@ -94,6 +72,7 @@ public:
 	FChunckMeshData ChunckDataMesh;
 	AChunckManager* ChunckManager;
 	FIntVector Coord;
+	bool bIsQueued;
 	//TArray<FVoxelDataStructure> VoxelData;
 
 

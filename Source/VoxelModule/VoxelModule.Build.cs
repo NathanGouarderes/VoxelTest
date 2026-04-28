@@ -1,3 +1,4 @@
+using System.IO;
 using UnrealBuildTool;
 
 public class VoxelModule : ModuleRules
@@ -6,8 +7,16 @@ public class VoxelModule : ModuleRules
     {
         // Modules dont tu as besoin
         PrivateDependencyModuleNames.AddRange(
-            new string[] {} //Core, CoreUObject et Engine sont généralement requis pour travailler avec des Actor, UObject, etc.
+            new string[]
+            {
+                "Core",                  // ← OBLIGATOIRE pour Misc/PlatformMisc.h
+                "CoreUObject",
+                "Engine"
+            }
         );
+
+        string FastNoiseLite = Path.Combine(ModuleDirectory, "../ThirdParty/FastNoiseLite");
+        PublicIncludePaths.Add(FastNoiseLite);
 
         // Si ton module doit exposer des API à l’extérieur :
         PublicDependencyModuleNames.AddRange(
