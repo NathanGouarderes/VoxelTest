@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ProceduralMeshComponent.h"
+#include "Components/DynamicMeshComponent.h"
 #include "ChunckBacker.generated.h"
 
 UCLASS()
@@ -24,6 +25,7 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	
+	UProceduralMeshComponent* ProceduralMeshComponent;
+	UDynamicMeshComponent* DynamicMeshComponent;
 
 };

@@ -25,10 +25,10 @@ void AVoxelGameMode::Tick(float DeltaTime)
 
 void AVoxelGameMode::Generate20Chuncks()
 {
-	float Size = 10 * 16;
-	int NumberX = 50;
+	float Size = 10 * 64;
+	int NumberX = 5;
 	int NumberY = 4;
-	int NumberZ = 11;
+	int NumberZ = 1;
 	for (int x = -NumberX; x <= NumberX; x++)
 	{
 		for (int y = -NumberY; y <= NumberY; y++)
