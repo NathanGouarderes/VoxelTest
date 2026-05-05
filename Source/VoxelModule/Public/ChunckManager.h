@@ -7,17 +7,15 @@
 #include "VoxelChunck.h"
 #include "FChunckDataStructure.h"
 #include "FastNoiseLite.h"
+#include "Engine/World.h"
+#include "HAL/RunnableThread.h"
+#include "EChunkVariant.h"
+#include "FChunckGenJob.h"
+#include "FChunkGenResult.h"
 #include "ChunckManager.generated.h"
 
+class ChunckGenWorker;
 class AVoxelWorld;
-
-enum class EChunkVariant
-{
-	Full,       // 100% solides
-	HalfFull,   // 50% random solides
-	Sparse,     // 20% solides avec clusters
-	Empty,      // 0% (pour tests)
-};
 
 UCLASS()
 class VOXELMODULE_API AChunckManager : public AActor
@@ -31,6 +29,7 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:	
 	// Called every frame
@@ -81,6 +80,12 @@ public:
 	bool bNeedUpdate;
 	TQueue<AVoxelChunck*> PendingMeshToApply;
 	TQueue<FIntVector> ChunckGenerationQueue;
+	TQueue<FChunkGenJob, EQueueMode::Mpsc> ChunckGenerationJobQueue;
+	TQueue<FChunkGenResult, EQueueMode::Mpsc> ChunckGenerationResult;
+	TArray<FRunnableThread*> WorkerThreads;
+	TArray<ChunckGenWorker*> Workers;
+
+	int32 NumWorkers = 3;
 
 	int32 NumThreads;
 	int MaxGenPerFrame;
@@ -103,5 +108,7 @@ public:
     float CaveThreshold;      // plus bas = plus de grottes
 	UPROPERTY(EditAnywhere)
     int   SeaLevel;         // niveau de la mer (lacs + océan)
+
+	std::atomic<bool> bIsShuttingDown;
 
 };

@@ -49,10 +49,19 @@
     <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckBacker.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\ChunckGenWorker.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckGenWorker.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
     <ClCompile Include="..\..\Source\VoxelModule\Public\ChunckManager.cpp">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckManager.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\EChunkVariant.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\VoxelModule\Public\EVoxelAxis.h">
@@ -64,7 +73,13 @@
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckDataStructure.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckGenJob.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckMeshData.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FChunkGenResult.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunkMeshResult.h">

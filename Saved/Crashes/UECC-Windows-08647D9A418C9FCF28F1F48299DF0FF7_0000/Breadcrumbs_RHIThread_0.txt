@@ -1,0 +1,7 @@
+Breadcrumbs 'RHIThread'
+ - GPUScene.Update
+ - GPUSceneUpdate
+ - UpdateAllPrimitiveSceneInfos
+ - RenderGraphExecute - /ViewFamilies
+ - SceneRender - ViewFamilies
+ - Frame 573
