@@ -10,8 +10,10 @@ struct FChunckDataStructure
 	FIntVector Coord;
 	TArray<FVoxelDataStructure> Voxels;
 	int8 ChunckSize = 64;
+	int32 GenerationId = 0;
 	bool bIsDirty = true;	
 	bool bIsChunckGenerated;
+	bool bPendingKill = false;
 	AVoxelChunck* VoxelChunck;
 	FChunckDataStructure()
 	{

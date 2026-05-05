@@ -3,5 +3,5 @@
 
 struct FVoxelMaterial
 {
-    uint8 Id;
+    uint8 Id = 0;
 };

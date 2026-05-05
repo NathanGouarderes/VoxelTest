@@ -20,7 +20,7 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 struct Z_Construct_UClass_AChunckManager_Statics;
 VOXELMODULE_API UClass* Z_Construct_UClass_AChunckManager_NoRegister();
 
-#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_25_INCLASS_NO_PURE_DECLS \
+#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_23_INCLASS_NO_PURE_DECLS \
 private: \
 	static void StaticRegisterNativesAChunckManager(); \
 	friend struct ::Z_Construct_UClass_AChunckManager_Statics; \
@@ -31,7 +31,7 @@ public: \
 	DECLARE_SERIALIZER(AChunckManager)
 
 
-#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_25_ENHANCED_CONSTRUCTORS \
+#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_23_ENHANCED_CONSTRUCTORS \
 	/** Deleted move- and copy-constructors, should never be used */ \
 	AChunckManager(AChunckManager&&) = delete; \
 	AChunckManager(const AChunckManager&) = delete; \
@@ -41,12 +41,12 @@ public: \
 	NO_API virtual ~AChunckManager();
 
 
-#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_22_PROLOG
-#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_25_GENERATED_BODY \
+#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_20_PROLOG
+#define FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_23_GENERATED_BODY \
 PRAGMA_DISABLE_DEPRECATION_WARNINGS \
 public: \
-	FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_25_INCLASS_NO_PURE_DECLS \
-	FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_25_ENHANCED_CONSTRUCTORS \
+	FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_23_INCLASS_NO_PURE_DECLS \
+	FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h_23_ENHANCED_CONSTRUCTORS \
 private: \
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
