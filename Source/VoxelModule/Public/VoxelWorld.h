@@ -8,6 +8,7 @@
 #include "FVoxelDataStructure.h"
 #include "ChunckManager.h"
 #include "FChunkMeshResult.h"
+#include "HAL/CriticalSection.h"
 #include "VoxelWorld.generated.h"
 
 UCLASS()
@@ -34,6 +35,7 @@ public:
 	static constexpr int ChunckSize = 32;
 
 	TMap<FIntVector, FChunckDataStructure> Chuncks;
+	FCriticalSection ChunckMutex;
 	TQueue<FChunkMeshResult> MeshUploadQueue;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")
 	AChunckManager* ChunckManager;

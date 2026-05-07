@@ -26,27 +26,34 @@ uint32 ChunckGenWorker::Run()
 {
 	while (!bStopRequest)
 	{
-		{
-			FScopeLock Lock(&StopMutex);
 			if (bStopRequest)
 			{
 				break;
 			}
-		}
-
 		FChunkGenJob Job;
-		if (!JobQueue.Dequeue(Job))
+		bool bGotJob = false;
+
+		if(ChunckManager)
 		{
-			FPlatformProcess::Sleep(0.002f);
-			continue;
+			FScopeLock Lock(&ChunckManager->DequeueMutex);
+			bGotJob = JobQueue.Dequeue(Job);
 		}
 
-		if (!ChunckManager)
+		if (!bGotJob)
 		{
+			FPlatformProcess::Sleep(0.007f);
 			continue;
 		}
+		//TWeakObjectPtr<AChunckManager> WeakManager = ChunckManager;
+		//AChunckManager* Manager = WeakManager.Get(); // On essaie de récupérer le pointeur
+		//if (!IsValid(Manager)) continue;
 
-		const int32 ChunckSize = ChunckManager->ChunkSize;
+		const int32 ChunckSize = Job.ChunkSize;
+		if (ChunckSize <= 0 || ChunckSize > 256)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Invalid ChunkSize detected: %d"), ChunckSize);
+			continue;
+		}
 		const int32 TotalSize = ChunckSize * ChunckSize * ChunckSize;
 
 		TArray<FVoxelDataStructure> LocalVoxel;
@@ -56,11 +63,11 @@ uint32 ChunckGenWorker::Run()
 		{
 			for (int y = 0; y < ChunckSize; y++)
 			{
-				float WorldX = (Job.Coord.X * ChunckSize + x) * ChunckManager->SurfaceFrequency;
-				float WorldY = (Job.Coord.Y * ChunckSize + y) * ChunckManager->SurfaceFrequency;
+				float WorldX = (Job.Coord.X * ChunckSize + x) * Job.SurfaceFrequency;
+				float WorldY = (Job.Coord.Y * ChunckSize + y) * Job.SurfaceFrequency;
 
-				float SurfaceNoiseValue = ChunckManager->SurfaceNoise.GetNoise(WorldX, WorldY);
-				int GlobalSurfaceHeigh = ChunckManager->BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * ChunckManager->SurfaceAmplitude);
+				float SurfaceNoiseValue = Job.SurfaceNoise.GetNoise(WorldX, WorldY);
+				int GlobalSurfaceHeigh = Job.BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * Job.SurfaceAmplitude);
 
 				for (int z = 0; z < ChunckSize; z++)
 				{
@@ -70,9 +77,9 @@ uint32 ChunckGenWorker::Run()
 					bool IsSolid = (GlobalZ < GlobalSurfaceHeigh);
 					if (IsSolid)
 					{
-						float CaveNoiseValue = ChunckManager->CaveNoise.GetNoise((Job.Coord.X * ChunckSize + x) * ChunckManager->CaveFrequency, (Job.Coord.Y * ChunckSize + y) * ChunckManager->CaveFrequency, GlobalZ * ChunckManager->CaveFrequency);
+						float CaveNoiseValue = Job.CaveNoise.GetNoise((Job.Coord.X * ChunckSize + x) * Job.CaveFrequency, (Job.Coord.Y * ChunckSize + y) * Job.CaveFrequency, GlobalZ * Job.CaveFrequency);
 
-						if (CaveNoiseValue > ChunckManager->CaveThreshold)
+						if (CaveNoiseValue > Job.CaveThreshold)
 						{
 							IsSolid = false;
 						}
@@ -81,43 +88,13 @@ uint32 ChunckGenWorker::Run()
 				}
 			}
 		}
-		TWeakObjectPtr<AChunckManager> WeakManager = ChunckManager;
-		FChunkGenResult Result;
-		Result.Coord = Job.Coord;
-		Result.Voxels = MoveTemp(LocalVoxel);
-		ChunckManager->ChunckGenerationResult.Enqueue(MoveTemp(Result));
-		//Retour dans le gamethread
-		/*
-		AsyncTask(ENamedThreads::GameThread, [WeakManager, Coord = Job.Coord, LocalVoxel = MoveTemp(LocalVoxel)]() mutable
-			{
-				AChunckManager* Manager = WeakManager.Get();
-				if (!WeakManager->VoxelWorld)
-				{
-					UE_LOG(LogTemp, Error, TEXT(" ChunckGenWorker::Run() --> ChunckManager ou VoxelWorld NULL"));
-					return;
-				}
-				if (!Manager || !Manager->VoxelWorld)
-				{
-					UE_LOG(LogTemp, Error, TEXT(" ChunckGenWorker::Run() --> Manager ou VoxelWorld NULL"));
-					return;
-				}
-
-				FChunckDataStructure* ChunckData = WeakManager->VoxelWorld->Chuncks.Find(Coord);
-
-				if (!ChunckData)
-				{
-					return;
-				}
-
-				
-				//ChunckData->Voxels = MoveTemp(LocalVoxel);
-				//ChunckData->bIsChunckGenerated = true;
-
-				//WeakManager->DirtyChuncks.Add(Coord);
-		});
-		*/
-		
-		
+		if (ChunckManager)
+		{
+			FChunkGenResult Result;
+			Result.Coord = Job.Coord;
+			Result.Voxels = MoveTemp(LocalVoxel);
+			ChunckManager->ChunckGenerationResult.Enqueue(MoveTemp(Result));
+		}
 	}
 	return 0;
 }

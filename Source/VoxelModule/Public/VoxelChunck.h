@@ -73,6 +73,7 @@ public:
 	AChunckManager* ChunckManager;
 	FIntVector Coord;
 	bool bIsQueued;
+	bool bIsBeingDestroyed = false;
 	//TArray<FVoxelDataStructure> VoxelData;
 
 

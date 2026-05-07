@@ -29,4 +29,5 @@ private:
 	AChunckManager* ChunckManager;
 	TQueue<FChunkGenJob, EQueueMode::Mpsc>& JobQueue;
 	bool bStopRequest;
+	FCriticalSection DequeueMutex;
 };
