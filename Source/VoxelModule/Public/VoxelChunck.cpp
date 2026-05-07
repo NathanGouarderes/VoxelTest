@@ -55,67 +55,79 @@ void AVoxelChunck::SetChunckManager(AChunckManager* Manager)
 
 void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 {
-	//UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData)"));
-
-	if (!ProceduralMeshComponent)
+	// 1. Vérification de base du composant
+	if (!ProceduralMeshComponent || bIsBeingDestroyed)
 	{
-		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData) --> ProceduralMeshComponent NULL"));
-
 		return;
 	}
-	ProceduralMeshComponent->SetMaterial(0, nullptr);
+
+	// 2. Sécurité : Nettoyage si mesh vide
 	if (MeshData.Vertices.Num() == 0)
 	{
-		//UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(FChunckMeshData& MeshData) --> MeshData.Vertices.Num() == 0"));
 		ProceduralMeshComponent->ClearMeshSection(0);
+		bIsDirty = true; // On marque comme sale car rien n'est affiché
 		return;
 	}
-	//ProceduralMeshComponent->ClearMeshSection(0);
-	//UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> Chunk %s | Vertices: %d | Triangles: %d"), *Coord.ToString(), MeshData.Vertices.Num(), MeshData.Triangles.Num() / 3);
-	if (MeshData.Vertices.Num() > 60000)
-	{
-		//UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) --> !!! MESH TROP GROS (%d verts) - risque de crash mémoire !!!"), MeshData.Vertices.Num());
-		return;
-	}
+
+	// 3. Sécurité Renderer : On s'assure que le monde est valide
 	UWorld* World = GetWorld();
-	if (!World)
+	if (!World) return;
+
+	// 4. Calcul de collision (simplifié)
+	// Au lieu de chercher le PlayerController ici, utilise une variable 
+	// ou passe l'info depuis le Manager si possible. 
+	// Sinon, garde cette logique mais avec IsValid()
+	bool bCreateCollision = false;
+	if (APlayerController* PC = World->GetFirstPlayerController())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) aborted: World is null"));
-		return;
+		if (APawn* Pawn = PC->GetPawn())
+		{
+			// Note: Utilise ta variable membre 'Coord' et les constantes 
+			// pour éviter de toucher au ChunckManager
+			float ChunkScale = 100.0f; // Remplace par une valeur fixe ou membre
+			if (ChunckManager) ChunkScale = ChunckManager->VoxelSize;
+
+			FVector ChunkWorldPos = GetActorLocation();
+			bCreateCollision = FVector::DistSquared(ChunkWorldPos, Pawn->GetActorLocation()) < FMath::Square(6000.0f);
+		}
 	}
 
-	APlayerController* PC = World->GetFirstPlayerController();
-	if (!PC)
+	// 5. APPLICATION CRITIQUE
+	// On vide TOUJOURS avant de recréer pour forcer le Renderer à recréer les buffers
+	ProceduralMeshComponent->ClearMeshSection(0);
+	
+	if (ProceduralMeshComponent->GetNumSections() > 0)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData) aborted: PlayerController null"));
-		return;
+		ProceduralMeshComponent->UpdateMeshSection(
+			0,
+			MeshData.Vertices,
+			MeshData.Normals,
+			MeshData.UVs,
+			MeshData.VertexColors,
+			MeshData.Tangents
+		);
+	}
+	else
+	{
+	
+		ProceduralMeshComponent->CreateMeshSection(
+			0,
+			MeshData.Vertices,
+			MeshData.Triangles,
+			MeshData.Normals,
+			MeshData.UVs,
+			MeshData.VertexColors,
+			MeshData.Tangents,
+			bCreateCollision
+		);
 	}
 
-	FVector ChunkWorldPos = FVector(Coord) * ChunckManager->ChunkSize * ChunckManager->VoxelSize;
-	FVector PlayerPos = PC->GetPawn()
-		? PC->GetPawn()->GetActorLocation()
-		: FVector::ZeroVector;
-
-	bool bCreateCollision = FVector::Dist(ChunkWorldPos, PlayerPos) < 6000.0f;  // 60 mètres
-	ProceduralMeshComponent->CreateMeshSection(
-		0,
-		MeshData.Vertices,
-		MeshData.Triangles,
-		MeshData.Normals,
-		MeshData.UVs,
-		MeshData.VertexColors,
-		MeshData.Tangents,
-		bCreateCollision
-	);
 	ProceduralMeshComponent->SetMeshSectionVisible(0, true);
-	if (MeshData.Vertices.Num() == 0)
-	{
-		bIsDirty = true;
-		return;
-	}
-	//UE_LOG(LogTemp, Warning, TEXT("Avant ApplyMesh - Vertices = %d | Triangles = %d"), MeshData.Vertices.Num(), MeshData.Triangles.Num());
-}
 
+	// 6. Finalisation
+	bIsDirty = false;
+	bIsQueued = false;
+}
 void AVoxelChunck::AddQuad(FVector P0, FVector P1, FVector P2, FVector P3, FVector Normal, FChunckMeshData& MeshData)
 {
 	int StartIndex = MeshData.Vertices.Num();
@@ -222,40 +234,48 @@ void AVoxelChunck::AddQuadXNegative(int x, int y, int z, int width, int height, 
 
 void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 {
-	if (!IsValid(this))
-	{
-		return;
-	}
 	if (!ChunckManager || !ChunckManager->VoxelWorld)
 		return;
 
+	FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
 	const FChunckDataStructure* CD = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
 	if (!CD || CD->Voxels.Num() == 0)
 		return;
+	TWeakObjectPtr<AVoxelChunck> WeakThis(this);
+	TWeakObjectPtr<AChunckManager> WeakManager(ChunckManager);
+
 
 	TArray<FVoxelDataStructure> LocalVoxels = CD->Voxels;
 
-	Async(EAsyncExecution::ThreadPool, [this, LocalVoxels = MoveTemp(LocalVoxels)]() mutable
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakManager, LocalVoxels = MoveTemp(LocalVoxels)]() mutable
 		{
 			FChunckMeshData MeshData;
-			GenerateGreedyMesh(MeshData, LocalVoxels);
 
-			AsyncTask(ENamedThreads::GameThread, [this, MeshData = MoveTemp(MeshData)]() mutable
+			if (!WeakThis.IsValid())
+			{
+				return;
+			}
+
+			WeakThis->GenerateGreedyMesh(MeshData, LocalVoxels);
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, WeakManager, MeshData = MoveTemp(MeshData)]() mutable
 				{
-					if (IsValid(this))
+					if (!WeakThis.IsValid())
 					{
-						ApplyMesh(MeshData);
+						return;
 					}
+					AVoxelChunck* Chunck = WeakThis.Get();
+					if (!Chunck || Chunck->bIsBeingDestroyed)
+					{
+						return;
+					}
+					Chunck->ApplyMesh(MeshData);
+					
 
-					if (ChunckManager)
+					if (AChunckManager* Manager = WeakManager.Get())
 					{
-						ChunckManager->CurrentMeshJob = FMath::Max(0, ChunckManager->CurrentMeshJob - 1);
+						Manager->CurrentMeshJob = FMath::Max(0, Manager->CurrentMeshJob - 1);
 					}
-					if (MeshData.Vertices.Num() == 0)
-					{
-						ChunckManager->PendingMeshToApply.Enqueue(this);
-					}
-					bIsQueued = false;
+					Chunck->bIsQueued = false;
 				});
 		});
 }
@@ -473,16 +493,19 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 	}
 
 	FIntVector TargetCoord = Coord + Offset;
+	
+	{
+		FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
+		const FChunckDataStructure* ChunkData = ChunckManager->VoxelWorld->Chuncks.Find(TargetCoord);
+		if (!ChunkData)
+			return false;                   // chunk non chargé = plein (correct)
 
-	const FChunckDataStructure* ChunkData = ChunckManager->VoxelWorld->Chuncks.Find(TargetCoord);
-	if (!ChunkData)
-		return false;                   // chunk non chargé = plein (correct)
+		int index = lx + ly * Size + lz * Size * Size;
+		if (!ChunkData->Voxels.IsValidIndex(index))
+			return false;
 
-	int index = lx + ly * Size + lz * Size * Size;
-	if (!ChunkData->Voxels.IsValidIndex(index))
-		return false;
-
-	return ChunkData->Voxels[index].Material.Id > 0;
+		return ChunkData->Voxels[index].Material.Id > 0;
+	}
 }
 
 bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels)
@@ -502,6 +525,7 @@ bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDat
 
 void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 {
+	FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
 	//Vérification des limites
 	if (X < 0 || X >= Size || Y < 0 || Y >= Size || Z < 0 || Z >= Size)
 	{
@@ -516,7 +540,6 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 		UE_LOG(LogTemp, Error, TEXT(" AVoxelChunck::RemoveVoxel(int X, int Y, int Z) --> ChunckManager ou VoxelWorld invalide"));
 		return;
 	}
-
 	FChunckDataStructure* ChunckData = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
 	if (!ChunckData)
 	{
@@ -527,7 +550,6 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 
 	bIsDirty = true;
 	ChunckManager->RegisterDirtyChunk(Coord);
-
 	if (X == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(-1, 0, 0));
 	if (X == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(1, 0, 0));
 
@@ -535,5 +557,5 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 	if (Y == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 1, 0));
 
 	if (Z == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, -1));
-	if (Z == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, 1));
+	if (Z == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, 1));	
 }

@@ -73,6 +73,9 @@
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckDataStructure.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\FChunckGenJob.cpp">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClCompile>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckGenJob.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>

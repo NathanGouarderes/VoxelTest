@@ -58,7 +58,7 @@ public:
 	int ChunkSize = 32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 10;
+	int32 HorizontalViewDistance = 40;
 	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
@@ -70,20 +70,21 @@ public:
 	float PlayerSpawnHeight = 110.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
-	int32 MaxSpawnPerFrame = 400;
+	int32 MaxSpawnPerFrame = 80;
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
-	int MaxRebuildPerFrame = 300;
+	int MaxRebuildPerFrame = 60;
 	float LastUpdateTime = 0.0f;
 	bool bForceUpdate = true;
 	FIntVector LastPlayerChunk = FIntVector::ZeroValue;
 	TMap<APawn*, FIntVector> LastPlayerChunks;
 	bool bNeedUpdate;
-	TQueue<AVoxelChunck*> PendingMeshToApply;
+	TQueue<AVoxelChunck*, EQueueMode::Mpsc> PendingMeshToApply;
 	TQueue<FIntVector> ChunckGenerationQueue;
 	TQueue<FChunkGenJob, EQueueMode::Mpsc> ChunckGenerationJobQueue;
 	TQueue<FChunkGenResult, EQueueMode::Mpsc> ChunckGenerationResult;
 	TArray<FRunnableThread*> WorkerThreads;
 	TArray<ChunckGenWorker*> Workers;
+	FCriticalSection DequeueMutex;
 
 	int32 NumWorkers = 3;
 

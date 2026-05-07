@@ -583,6 +583,10 @@
       <ForcedIncludeFiles>$(ClCompile_ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckDataStructure.h"/>
+    <ClCompile Include="..\..\Source\VoxelModule\Public\FChunckGenJob.cpp">
+      <AdditionalIncludeDirectories>$(ClCompile_AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ForcedIncludeFiles>$(ClCompile_ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckGenJob.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckMeshData.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunkGenResult.h"/>
