@@ -21,8 +21,7 @@ AVoxelChunck::AVoxelChunck()
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
 	bIsQueued = false;
-
-
+	CurrentLOD = 0;
 }
 
 // Called when the game starts or when spawned
@@ -92,10 +91,7 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 		}
 	}
 
-	// 5. APPLICATION CRITIQUE
-	// On vide TOUJOURS avant de recréer pour forcer le Renderer à recréer les buffers
-	ProceduralMeshComponent->ClearMeshSection(0);
-	
+	// 5. APPLICATION CRITIQUE	
 	if (ProceduralMeshComponent->GetNumSections() > 0)
 	{
 		ProceduralMeshComponent->UpdateMeshSection(
@@ -290,6 +286,8 @@ void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FV
 	MeshData.Tangents.Empty();
 
 	int32 VertexCount = 0;
+	int Step = FMath::Max(1, FMath::DivideAndRoundUp(1, CurrentLOD));
+	int EffectiveSize = Size / Step;
 
 	// Sweep sur les 3 axes (X, Y, Z)
 	for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -494,8 +492,8 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 
 	FIntVector TargetCoord = Coord + Offset;
 	
-	{
-		FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
+	//{
+		//FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
 		const FChunckDataStructure* ChunkData = ChunckManager->VoxelWorld->Chuncks.Find(TargetCoord);
 		if (!ChunkData)
 			return false;                   // chunk non chargé = plein (correct)
@@ -505,7 +503,7 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 			return false;
 
 		return ChunkData->Voxels[index].Material.Id > 0;
-	}
+	//}
 }
 
 bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels)

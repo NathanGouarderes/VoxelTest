@@ -64,7 +64,7 @@ public:
 	void SetChunckManager(AChunckManager* Manager);
 
 
-	int32 CurrentLOD = 0;
+	int32 CurrentLOD;
 	bool bIsDirty;
 	int8 Size;
 	UProceduralMeshComponent* ProceduralMeshComponent;

@@ -26,10 +26,6 @@ uint32 ChunckGenWorker::Run()
 {
 	while (!bStopRequest)
 	{
-			if (bStopRequest)
-			{
-				break;
-			}
 		FChunkGenJob Job;
 		bool bGotJob = false;
 
@@ -41,19 +37,11 @@ uint32 ChunckGenWorker::Run()
 
 		if (!bGotJob)
 		{
-			FPlatformProcess::Sleep(0.007f);
+			FPlatformProcess::Sleep(0.01f);
 			continue;
 		}
-		//TWeakObjectPtr<AChunckManager> WeakManager = ChunckManager;
-		//AChunckManager* Manager = WeakManager.Get(); // On essaie de récupérer le pointeur
-		//if (!IsValid(Manager)) continue;
 
 		const int32 ChunckSize = Job.ChunkSize;
-		if (ChunckSize <= 0 || ChunckSize > 256)
-		{
-			UE_LOG(LogTemp, Error, TEXT("Invalid ChunkSize detected: %d"), ChunckSize);
-			continue;
-		}
 		const int32 TotalSize = ChunckSize * ChunckSize * ChunckSize;
 
 		TArray<FVoxelDataStructure> LocalVoxel;

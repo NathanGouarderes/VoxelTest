@@ -13,7 +13,7 @@
 AChunckManager::AChunckManager():
     SurfaceFrequency(0.026f)
     , SurfaceAmplitude(80.0f)
-    , BaseHeight(108)
+    , BaseHeight(408)
     , CaveFrequency(0.038f)
     , CaveThreshold(0.42f)
     , SeaLevel(24)
@@ -45,7 +45,7 @@ void AChunckManager::BeginPlay()
             if (!Pawn) return;
 
             FVector Pos = Pawn->GetActorLocation();
-            Pos.Z += 810.f; // 🔥 hauteur safe
+            Pos.Z += 2000.f; // 🔥 hauteur safe
 
             Pawn->SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -221,20 +221,21 @@ void AChunckManager::Tick(float DeltaTime)
                 AVoxelChunck* VoxelChunck = Chunck->VoxelChunck.Get();
                 if (!IsValid(VoxelChunck))
                     continue;
-
-                int32 DesiredLOD = GetLODForChunck(Coord, PlayerPos);
-
+                /*
+                int32 DesiredLOD = GetLODForChunck(Coord, PlayerPos);                
                 if (VoxelChunck->CurrentLOD != DesiredLOD || VoxelChunck->bIsDirty)
                 {
                     if (!VoxelChunck->bIsQueued)
                     {
                         VoxelChunck->bIsQueued = true;
-                        PendingMeshToApply.Enqueue(VoxelChunck);
+                        //PendingMeshToApply.Enqueue(VoxelChunck);
                         RebuildCount++;
                     }
                 }
+                */
+                PendingMeshToApply.Enqueue(VoxelChunck);
             }
-
+            
             DirtyChuncks.Remove(Coord);
         }
     }

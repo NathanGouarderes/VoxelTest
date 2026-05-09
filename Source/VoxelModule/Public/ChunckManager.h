@@ -58,7 +58,7 @@ public:
 	int ChunkSize = 32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 40;
+	int32 HorizontalViewDistance = 10;
 	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
@@ -86,7 +86,7 @@ public:
 	TArray<ChunckGenWorker*> Workers;
 	FCriticalSection DequeueMutex;
 
-	int32 NumWorkers = 3;
+	int32 NumWorkers = 6;
 
 	int32 NumThreads;
 	int MaxGenPerFrame;

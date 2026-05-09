@@ -1,15 +1,5 @@
-2026/05/07-07:44:58.256 6cdc Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/07-07:44:58.263 6cdc Recovering log #256
-2026/05/07-07:44:58.265 6cdc Reusing old log C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/000256.log 
-2026/05/07-07:51:23.767 6b9c Level-0 table #260: started
-2026/05/07-07:51:23.777 6b9c Level-0 table #260: 72712 bytes OK
-2026/05/07-07:51:23.786 6b9c Delete type=0 #256
-2026/05/07-07:51:23.788 6b9c Compacting 4@0 + 1@1 files
-2026/05/07-07:51:23.798 6b9c Generated table #261@0: 7 keys, 36823 bytes
-2026/05/07-07:51:23.798 6b9c Compacted 4@0 + 1@1 files => 36823 bytes
-2026/05/07-07:51:23.801 6b9c compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/05/07-07:51:23.802 6b9c Delete type=2 #248
-2026/05/07-07:51:23.802 6b9c Delete type=2 #250
-2026/05/07-07:51:23.802 6b9c Delete type=2 #253
-2026/05/07-07:51:23.802 6b9c Delete type=2 #257
-2026/05/07-07:51:23.802 6b9c Delete type=2 #260
+2026/05/09-10:59:01.750 9b90 Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/09-10:59:01.755 9b90 Recovering log #273
+2026/05/09-10:59:01.755 9b90 Level-0 table #276: started
+2026/05/09-10:59:01.765 9b90 Level-0 table #276: 72912 bytes OK
+2026/05/09-10:59:01.770 9b90 Delete type=0 #273
