@@ -21,7 +21,8 @@ AVoxelChunck::AVoxelChunck()
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
 	bIsQueued = false;
-	CurrentLOD = 0;
+	CurrentLOD = 0;   
+	bIsDirty = true;
 }
 
 // Called when the game starts or when spawned
@@ -92,6 +93,7 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 	}
 
 	// 5. APPLICATION CRITIQUE	
+	/*
 	if (ProceduralMeshComponent->GetNumSections() > 0)
 	{
 		ProceduralMeshComponent->UpdateMeshSection(
@@ -105,6 +107,7 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 	}
 	else
 	{
+	*/
 	
 		ProceduralMeshComponent->CreateMeshSection(
 			0,
@@ -116,7 +119,7 @@ void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
 			MeshData.Tangents,
 			bCreateCollision
 		);
-	}
+	//}
 
 	ProceduralMeshComponent->SetMeshSectionVisible(0, true);
 
@@ -237,13 +240,67 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 	const FChunckDataStructure* CD = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
 	if (!CD || CD->Voxels.Num() == 0)
 		return;
+
+	const int32 PaddedSize = Size + 2;
+	TArray<FVoxelDataStructure> PaddedVoxels;
+	PaddedVoxels.SetNum(PaddedSize * PaddedSize * PaddedSize);
+
+	for (int z = 0; z < Size; z++)
+	{
+		for (int y = 0; y < Size; y++)
+		{
+			for (int x = 0; x < Size; x++)
+			{
+				int srcIdx = x + y * Size + z * Size * Size;
+				int dstIdx = (x + 1) + (y + 1) * PaddedSize + (z + 1) * PaddedSize * PaddedSize;//On récupère les données des voxels voisins 
+				PaddedVoxels[dstIdx] = CD->Voxels[srcIdx]; //En bordure de Chunk, si les voisins sont solides, le chunk voisin aura ses coutures solides aussi. Ici on récupère juste l'info.
+			}
+		}
+	}
+
+	const FIntVector Neighbors[6] = {
+	{-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1}
+	};
+
+	for (const FIntVector& Dir : Neighbors)
+	{
+		const FChunckDataStructure* Neighbor = ChunckManager->VoxelWorld->Chuncks.Find(Coord + Dir);
+		if (!Neighbor || Neighbor->Voxels.Num() == 0) continue;
+
+		// Itérer sur la face de bordure correspondante
+		for (int a = 0; a < Size; a++)
+		{
+			for (int b = 0; b < Size; b++)
+			{
+				int nx = (Dir.X == -1) ? (Size - 1) : (Dir.X == 1) ? 0 : a;
+				int ny = (Dir.Y == -1) ? (Size - 1) : (Dir.Y == 1) ? 0 :
+					(Dir.X != 0) ? a : b;
+				int nz = (Dir.Z == -1) ? (Size - 1) : (Dir.Z == 1) ? 0 :
+					(Dir.X != 0) ? b : (Dir.Y != 0) ? b : 0;
+
+				// Position dans le buffer paddé (bordure du côté Dir)
+				int px = (Dir.X == -1) ? 0 : (Dir.X == 1) ? PaddedSize - 1 : a + 1;
+				int py = (Dir.Y == -1) ? 0 : (Dir.Y == 1) ? PaddedSize - 1 :
+					(Dir.X != 0) ? a + 1 : b + 1;
+				int pz = (Dir.Z == -1) ? 0 : (Dir.Z == 1) ? PaddedSize - 1 :
+					(Dir.X != 0) ? b + 1 : (Dir.Y != 0) ? b + 1 : 1;
+
+				int srcIdx = nx + ny * Size + nz * Size * Size;
+				int dstIdx = px + py * PaddedSize + pz * PaddedSize * PaddedSize;
+				if (Neighbor->Voxels.IsValidIndex(srcIdx))
+					PaddedVoxels[dstIdx] = Neighbor->Voxels[srcIdx];
+			}
+		}
+	}
+		
+
 	TWeakObjectPtr<AVoxelChunck> WeakThis(this);
 	TWeakObjectPtr<AChunckManager> WeakManager(ChunckManager);
 
 
-	TArray<FVoxelDataStructure> LocalVoxels = CD->Voxels;
+	//TArray<FVoxelDataStructure> LocalVoxels = CD->Voxels;
 
-	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakManager, LocalVoxels = MoveTemp(LocalVoxels)]() mutable
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakManager, PaddedVoxels = MoveTemp(PaddedVoxels)]() mutable
 		{
 			FChunckMeshData MeshData;
 
@@ -252,7 +309,7 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 				return;
 			}
 
-			WeakThis->GenerateGreedyMesh(MeshData, LocalVoxels);
+			WeakThis->GenerateGreedyMesh(MeshData, PaddedVoxels);
 			AsyncTask(ENamedThreads::GameThread, [WeakThis, WeakManager, MeshData = MoveTemp(MeshData)]() mutable
 				{
 					if (!WeakThis.IsValid())
@@ -278,129 +335,114 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 
 void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels)
 {
-	MeshData.Vertices.Empty();
-	MeshData.Triangles.Empty();
-	MeshData.Normals.Empty();
-	MeshData.UVs.Empty();
-	MeshData.VertexColors.Empty();
-	MeshData.Tangents.Empty();
-
+    int32 Step = 1 << CurrentLOD;
 	int32 VertexCount = 0;
-	int Step = FMath::Max(1, FMath::DivideAndRoundUp(1, CurrentLOD));
-	int EffectiveSize = Size / Step;
+    int32 EffectiveSize = Size / Step;
+	const int32 PaddedSize = Size + 2;
 
-	// Sweep sur les 3 axes (X, Y, Z)
-	for (int32 Axis = 0; Axis < 3; ++Axis)
-	{
-		const int32 Axis1 = (Axis + 1) % 3;
-		const int32 Axis2 = (Axis + 2) % 3;
+    for (int32 Axis = 0; Axis < 3; ++Axis)
+    {
+        const int32 Axis1 = (Axis + 1) % 3;
+        const int32 Axis2 = (Axis + 2) % 3;
 
-		FIntVector AxisMask = FIntVector::ZeroValue;
-		AxisMask[Axis] = 1;
+        FIntVector AxisMask = FIntVector::ZeroValue;
+        AxisMask[Axis] = 1;
 
-		TArray<FMask> Mask;
-		Mask.SetNum(Size * Size);
+        TArray<FMask> Mask;
+        Mask.SetNum(EffectiveSize * EffectiveSize);
 
-		FIntVector ChunkItr = FIntVector::ZeroValue;
+        FIntVector Iter = FIntVector::ZeroValue;
 
-		for (ChunkItr[Axis] = -1; ChunkItr[Axis] < Size;)
-		{
-			int32 N = 0;
+        // On itère sur les indices "LOD" (0, 1, 2... EffectiveSize)
+        for (Iter[Axis] = -1; Iter[Axis] < EffectiveSize; ++Iter[Axis])
+        {
+            int32 N = 0;
 
-			// === 1. Construire le Mask ===
-			for (ChunkItr[Axis2] = 0; ChunkItr[Axis2] < Size; ++ChunkItr[Axis2])
-			{
-				for (ChunkItr[Axis1] = 0; ChunkItr[Axis1] < Size; ++ChunkItr[Axis1])
-				{
-					const bool CurrentSolid = IsVoxelSolidLocal(ChunkItr.X, ChunkItr.Y, ChunkItr.Z, LocalVoxels);
-					const bool CompareSolid = IsVoxelSolidLocal(ChunkItr.X + AxisMask.X,ChunkItr.Y + AxisMask.Y, ChunkItr.Z + AxisMask.Z, LocalVoxels);
+            // === 1. Construire le Mask ===
+            for (Iter[Axis2] = 0; Iter[Axis2] < EffectiveSize; ++Iter[Axis2])
+            {
+                for (Iter[Axis1] = 0; Iter[Axis1] < EffectiveSize; ++Iter[Axis1])
+                {
+                    // On multiplie par Step UNIQUEMENT pour lire la donnée voxel
+                    const int32 SX = Iter.X * Step;
+                    const int32 SY = Iter.Y * Step;
+                    const int32 SZ = Iter.Z * Step;
 
-					if (CurrentSolid == CompareSolid)
-					{
-						Mask[N++] = FMask{ 0, 0 };
-					}
-					else if (CurrentSolid)
-					{
-						Mask[N++] = FMask{ 1, 1 };
-					}
-					else
-					{
-						Mask[N++] = FMask{ 1, -1 };
-					}
-				}
-			}
+                    const bool CurrentSolid = IsVoxelSolidLocal(SX, SY, SZ, LocalVoxels, PaddedSize);
+                    // On compare avec le bloc suivant (décalé de Step)
+                    const bool CompareSolid = IsVoxelSolidLocal(SX + AxisMask.X * Step, SY + AxisMask.Y * Step, SZ + AxisMask.Z * Step, LocalVoxels, PaddedSize);
 
-			++ChunkItr[Axis];
-			N = 0;
+                    if (CurrentSolid == CompareSolid) {
+                        Mask[N++] = FMask{ 0, 0 };
+                    } else if (CurrentSolid) {
+                        Mask[N++] = FMask{ 1, 1 };
+                    } else {
+                        Mask[N++] = FMask{ 1, -1 };
+                    }
+                }
+            }
 
-			// === 2. Générer les quads à partir du Mask ===
-			for (int32 j = 0; j < Size; ++j)
-			{
-				for (int32 i = 0; i < Size;)
-				{
-					if (Mask[N].Normal != 0)
-					{
-						const FMask CurrentMask = Mask[N];
+            N = 0;
+            // === 2. Générer les quads ===
+            for (int32 j = 0; j < EffectiveSize; ++j)
+            {
+                for (int32 i = 0; i < EffectiveSize; )
+                {
+                    if (Mask[N].Normal != 0)
+                    {
+                        const FMask CurrentMask = Mask[N];
+                        int32 Width = 1;
+                        while (i + Width < EffectiveSize && CompareMask(Mask[N + Width], CurrentMask))
+                            ++Width;
 
-						ChunkItr[Axis1] = i;
-						ChunkItr[Axis2] = j;
+                        int32 Height = 1;
+                        bool Done = false;
+                        for (; Height + j < EffectiveSize; ++Height)
+                        {
+                            for (int32 k = 0; k < Width; ++k)
+                            {
+                                if (!CompareMask(Mask[N + k + Height * EffectiveSize], CurrentMask))
+                                { Done = true; break; }
+                            }
+                            if (Done) break;
+                        }
 
-						// Largeur
-						int32 Width = 1;
-						while (i + Width < Size && CompareMask(Mask[N + Width], CurrentMask))
-							++Width;
+                        // Calcul des positions (on reste en indices LOD pour l'instant)
+                        FIntVector V1 = Iter;
+                        V1[Axis1] = i;
+                        V1[Axis2] = j;
+						V1[Axis] += 1;
+                       // if (CurrentMask.Normal > 0) V1[Axis] += 1;
 
-						// Hauteur
-						int32 Height = 1;
-						bool Done = false;
-						for (; Height + j < Size; ++Height)
-						{
-							for (int32 k = 0; k < Width; ++k)
-							{
-								if (!CompareMask(Mask[N + k + Height * Size], CurrentMask))
-								{
-									Done = true;
-									break;
-								}
-							}
-							if (Done) break;
-						}
+                        FIntVector V2 = V1; V2[Axis1] += Width;
+                        FIntVector V3 = V1; V3[Axis2] += Height;
+                        FIntVector V4 = V2; V4[Axis2] += Height;
 
-						// === Calcul propre des 4 coins du quad (remplace les ternaires foireux) ===
-						FIntVector V1 = ChunkItr;
-						FIntVector V2 = V1;  V2[Axis1] += Width;
-						FIntVector V3 = V1;  V3[Axis2] += Height;
-						FIntVector V4 = V2;  V4[Axis2] += Height;
+                        // CLÉ : On multiplie par Step ici pour remettre le quad à la bonne taille monde
+                        CreateQuad(CurrentMask, AxisMask, Width, Height, 
+                                   V1 * Step, V2 * Step, V3 * Step, V4 * Step, 
+                                   VertexCount, MeshData, Step);
 
-						// Créer le quad
-						CreateQuad(CurrentMask, AxisMask, Width, Height, V1, V2, V3, V4, VertexCount, MeshData);
-
-						// Marquer comme traité
-						for (int32 l = 0; l < Height; ++l)
-							for (int32 k = 0; k < Width; ++k)
-								Mask[N + k + l * Size] = FMask{ 0, 0 };
-
-						i += Width;
-						N += Width;
 						VertexCount += 4;
-					}
-					else
-					{
-						++i;
-						++N;
-					}
-				}
-			}
-		}
-	}
+
+                        for (int32 l = 0; l < Height; ++l)
+                            for (int32 k = 0; k < Width; ++k)
+                                Mask[N + k + l * EffectiveSize] = FMask{ 0, 0 };
+
+                        i += Width; N += Width;
+                    }
+                    else { ++i; ++N; }
+                }
+            }
+        }
+    }
 }
 
-void AVoxelChunck::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData)
+void AVoxelChunck::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 Step)
 {
 	const FVector Normal = FVector(AxisMask) * Mask.Normal * VoxelSize;
 
 	const int32 StartIndex = MeshData.Vertices.Num();
-
 	MeshData.Vertices.Append({ FVector(V1) * VoxelSize, FVector(V2) * VoxelSize,
 							   FVector(V3) * VoxelSize, FVector(V4) * VoxelSize });
 
@@ -506,12 +548,16 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 	//}
 }
 
-bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels)
+bool AVoxelChunck::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize)
 {
-	if (x < 0 || x >= Size || y < 0 || y >= Size || z < 0 || z >= Size)
+
+	int px = x + 1;
+	int py = y + 1;
+	int pz = z + 1;
+	if (px < 0 || px >= PaddedSize || py < 0 || py >= PaddedSize || pz < 0 || pz >= PaddedSize)
 		return false;
 
-	int index = x + y * Size + z * Size * Size;
+	int index = px + py * PaddedSize + pz * PaddedSize * PaddedSize;
 
 	if (!LocalVoxels.IsValidIndex(index))
 		return false;

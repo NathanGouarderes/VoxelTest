@@ -76,11 +76,27 @@ uint32 ChunckGenWorker::Run()
 				}
 			}
 		}
+		bool bIsAllSolid = true;
+		bool bIsAllEmpty = true;
+
+		for (FVoxelDataStructure Voxel : LocalVoxel)
+		{
+			if (Voxel.Material.Id == 0)
+			{
+				bIsAllSolid = false;
+			}
+			else
+			{
+				bIsAllEmpty = false;
+			}
+		}
 		if (ChunckManager)
 		{
 			FChunkGenResult Result;
 			Result.Coord = Job.Coord;
 			Result.Voxels = MoveTemp(LocalVoxel);
+			Result.bIsAllEmpty = bIsAllEmpty;
+			Result.bIsAllSolid = bIsAllSolid;
 			ChunckManager->ChunckGenerationResult.Enqueue(MoveTemp(Result));
 		}
 	}
@@ -92,4 +108,3 @@ void ChunckGenWorker::Stop()
 	FScopeLock Lock(&StopMutex);
 	bStopRequest = true;
 }
-

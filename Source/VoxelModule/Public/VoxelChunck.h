@@ -41,7 +41,7 @@ public:
 	void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
 	void GenerateAsyncGreedyMesh(int32 InLOD = 0);
 	void ApplyMesh(const FChunckMeshData& MeshData);
-	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData);
+	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
 
 	void AddQuadXPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
@@ -56,7 +56,7 @@ public:
 
 	void RemoveVoxel(int X, int Y, int Z);
 	bool IsVoxelSolid(int x, int y, int z);
-	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels);
+	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize);
 
 	//bool IsFaceVisible(int X, int Y, int Z, bool IsPositiveDirection);
 	//void GreedyDirection(Axis axis, bool positive);

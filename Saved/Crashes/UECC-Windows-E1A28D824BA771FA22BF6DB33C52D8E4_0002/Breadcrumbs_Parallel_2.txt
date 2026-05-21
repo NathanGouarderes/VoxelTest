@@ -1,0 +1,8 @@
+Breadcrumbs 'Parallel'
+ - UpdateRadianceCaches
+ - LumenScreenProbeGather
+ - DiffuseIndirectAndAO
+ - Scene
+ - RenderGraphExecute - /ViewFamilies
+ - SceneRender - ViewFamilies
+ - Frame 11330

@@ -39,6 +39,7 @@ public:
 	TQueue<FChunkMeshResult> MeshUploadQueue;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")
 	AChunckManager* ChunckManager;
+	int32 CurrentLOD = 0;
 	
 
 };

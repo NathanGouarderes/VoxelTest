@@ -16,6 +16,7 @@
 
 class ChunckGenWorker;
 class AVoxelWorld;
+class AClusterChunk;
 
 UCLASS()
 class VOXELMODULE_API AChunckManager : public AActor
@@ -42,6 +43,7 @@ public:
 	void GenerateTerrain(FChunckDataStructure& Data, FIntVector Coord);
 	void FillChunck(EChunkVariant Variant, FIntVector Coord);
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
+	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
 
@@ -59,10 +61,10 @@ public:
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
 	int32 HorizontalViewDistance = 10;
-	int32 VerticalViewDistance = 10;
+	int32 VerticalViewDistance = 5;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 0.0f, 8000.0f, 16000.0f, 32000.0f };
+	TArray<float> LODDistances = { 3200.0f, 8000.0f, 16000.0f, 32000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -85,6 +87,7 @@ public:
 	TArray<FRunnableThread*> WorkerThreads;
 	TArray<ChunckGenWorker*> Workers;
 	FCriticalSection DequeueMutex;
+	TArray<TObjectPtr<AClusterChunk>> ClusterPool;
 
 	int32 NumWorkers = 6;
 
@@ -93,6 +96,12 @@ public:
 
 	int32 CurrentMeshJob;
 	int32 MaxMeshJob;
+	int32 DesiredLOD;
+
+	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier1;
+	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier2;
+	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier3;
+
 
 	//Bruit
 	FastNoiseLite SurfaceNoise;

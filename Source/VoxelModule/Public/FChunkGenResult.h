@@ -7,4 +7,6 @@ struct FChunkGenResult
 {
     FIntVector Coord;
     TArray<FVoxelDataStructure> Voxels;
+    bool bIsAllSolid;
+    bool bIsAllEmpty;
 };
