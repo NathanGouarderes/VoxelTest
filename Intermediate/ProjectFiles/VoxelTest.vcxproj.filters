@@ -31,6 +31,9 @@
     <ClCompile Include="..\..\Source\VoxelModule\Private\ChunckBacker.cpp">
       <Filter>Source\VoxelModule\Private</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\VoxelModule\Private\ClusterChunk.cpp">
+      <Filter>Source\VoxelModule\Private</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\VoxelModule\Private\FChunkMeshResult.cpp">
       <Filter>Source\VoxelModule\Private</Filter>
     </ClCompile>
@@ -59,6 +62,9 @@
       <Filter>Source\VoxelModule\Public</Filter>
     </ClCompile>
     <ClInclude Include="..\..\Source\VoxelModule\Public\ChunckManager.h">
+      <Filter>Source\VoxelModule\Public</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\ClusterChunk.h">
       <Filter>Source\VoxelModule\Public</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\VoxelModule\Public\EChunkVariant.h">

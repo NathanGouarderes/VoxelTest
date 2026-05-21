@@ -6,6 +6,7 @@
 #include "GameFramework/GameModeBase.h"  
 #include "Kismet/GameplayStatics.h"
 #include "HAL/PlatformMisc.h"
+#include "FChunkGenResult.h"
 #include "ChunckGenWorker.h"
 #include "VoxelWorld.h"
 
@@ -13,7 +14,7 @@
 AChunckManager::AChunckManager():
     SurfaceFrequency(0.026f)
     , SurfaceAmplitude(80.0f)
-    , BaseHeight(108)
+    , BaseHeight(408)
     , CaveFrequency(0.038f)
     , CaveThreshold(0.42f)
     , SeaLevel(24)
@@ -34,6 +35,11 @@ void AChunckManager::BeginPlay()
 {
     Super::BeginPlay();
 
+    UProceduralMeshComponent* ClusterProceduralMeshComponent = NewObject<UProceduralMeshComponent>(this);
+    ClusterProceduralMeshComponent->RegisterComponent();
+    ClusterProceduralMeshComponent->AttachToComponent(GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+    //ClusterProceduralMeshComponent->SetWorldLocation(ClusterWorldPos);
+
     NumThreads = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
     MaxMeshJob = FMath::Clamp(NumThreads - 2, 2, 8);
     MaxGenPerFrame = FMath::Clamp(NumThreads / 2, 2, 8);
@@ -45,7 +51,7 @@ void AChunckManager::BeginPlay()
             if (!Pawn) return;
 
             FVector Pos = Pawn->GetActorLocation();
-            Pos.Z += 810.f; // 🔥 hauteur safe
+            Pos.Z += 2000.f; // 🔥 hauteur safe
 
             Pawn->SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -53,7 +59,7 @@ void AChunckManager::BeginPlay()
 
     InitNoise();
 
-    for (int32 i = 0; i < NumWorkers; i++)
+    for (int32 i = 0; i < MaxMeshJob; i++)
     {
         ChunckGenWorker* Worker = new ChunckGenWorker(this, ChunckGenerationJobQueue);
 
@@ -146,12 +152,7 @@ void AChunckManager::Tick(float DeltaTime)
             {
                 break;
             }
-            //if (!ChunckData)
-           // {
-            //    continue;
-           // }
             FillChunck(EChunkVariant::Full, Coord);
-            //DirtyChuncks.Add(Coord);
         }
 
     }
@@ -183,7 +184,19 @@ void AChunckManager::Tick(float DeltaTime)
             ChunckData->bIsChunckGenerated = true;
 
         }
-        DirtyChuncks.Add(Result.Coord);
+
+        if (!Result.bIsAllEmpty && Result.bIsAllSolid)
+        {
+            DirtyChuncks.Add(Result.Coord);
+        }
+        const FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
+        for (const FIntVector& Dir : Dirs)
+        {
+            FIntVector NeighborCoord = Result.Coord + Dir;
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+            if (VoxelWorld->Chuncks.Contains(NeighborCoord))
+                DirtyChuncks.Add(NeighborCoord);
+        }
         Count++;
         
     }
@@ -196,7 +209,6 @@ void AChunckManager::Tick(float DeltaTime)
         int32 RebuildCount = 0;
 
         TArray<FIntVector> DirtyToProcess = DirtyChuncks.Array();
-        //DirtyToProcess.Reserve(DirtyChuncks.Num());
 
         DirtyToProcess.Sort([&](const FIntVector& A, const FIntVector& B)
             {
@@ -207,6 +219,7 @@ void AChunckManager::Tick(float DeltaTime)
 
         for (const FIntVector& Coord : DirtyToProcess)
         {
+            DesiredLOD = GetLODForChunck(Coord, PlayerPos);
             if (RebuildCount >= MaxRebuildPerFrame)
                 break;
 
@@ -219,28 +232,17 @@ void AChunckManager::Tick(float DeltaTime)
                     continue;
 
                 AVoxelChunck* VoxelChunck = Chunck->VoxelChunck.Get();
+                VoxelChunck->CurrentLOD = DesiredLOD;
                 if (!IsValid(VoxelChunck))
                     continue;
-
-                int32 DesiredLOD = GetLODForChunck(Coord, PlayerPos);
-
-                if (VoxelChunck->CurrentLOD != DesiredLOD || VoxelChunck->bIsDirty)
-                {
-                    if (!VoxelChunck->bIsQueued)
-                    {
-                        VoxelChunck->bIsQueued = true;
-                        PendingMeshToApply.Enqueue(VoxelChunck);
-                        RebuildCount++;
-                    }
-                }
+                PendingMeshToApply.Enqueue(VoxelChunck);
             }
-
+            
             DirtyChuncks.Remove(Coord);
         }
     }
     while (CurrentMeshJob < MaxMeshJob && !PendingMeshToApply.IsEmpty())
     {
-        //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::Tick(float DeltaTime) --> CurrentMeshJob : %d  MaxMeshJob %d"), CurrentMeshJob, MaxMeshJob);
         AVoxelChunck* ChunckToProcess = nullptr;
 
         if (!PendingMeshToApply.Dequeue(ChunckToProcess))
@@ -254,6 +256,7 @@ void AChunckManager::Tick(float DeltaTime)
         }
         ChunckToProcess->bIsQueued = false;
         CurrentMeshJob++;
+        
         ChunckToProcess->GenerateAsyncGreedyMesh();
     }
 }
@@ -272,7 +275,7 @@ int32 AChunckManager::GetLODForChunck(const FIntVector& Coord, const FVector& Pl
             return FMath::Clamp(i, 0, MaxLOD);
         }
     }
-
+    UE_LOG(LogTemp, Warning, TEXT("AChunckManager::GetLODForChunck --> ChunkCoord : X %d Y %d, Z %d, LOD : "), Coord.X, Coord.Y, Coord.Z, MaxLOD);
     return MaxLOD;
 }
 
@@ -341,6 +344,8 @@ void AChunckManager::RegisterDirtyChunk(FIntVector Coord)
         FScopeLock Lock(&VoxelWorld->ChunckMutex);
         if (VoxelWorld->Chuncks.Find(Coord))
         {
+            FChunkGenResult Result;
+            Result.bIsAllSolid = false;
             DirtyChuncks.Add(Coord);
             //UE_LOG(LogTemp, Warning, TEXT(" RegisterDirtyChunk(FIntVector Coord)  → Chunk %s enfilé (existe dans la map)"), *Coord.ToString());
         }
@@ -407,6 +412,36 @@ void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord)
 
     ChunckGenerationJobQueue.Enqueue(FChunkGenJob(Coord, Variant, this));
 }
+
+FIntVector AChunckManager::GetClusterCoord(FIntVector Coord, int LOD)
+{
+    int32 NbChunk = 0;
+    
+    switch (LOD)
+    {
+    case 1:
+        NbChunk = 4;
+        break;
+    case 2:
+        NbChunk = 16;
+        break;
+    case 3:
+        NbChunk = 32;
+        break;
+    default:
+        NbChunk = 4;
+        break;
+    }
+
+    FIntVector ClusterCoord(
+        FMath::FloorToInt((float)Coord.X / NbChunk),
+        FMath::FloorToInt((float)Coord.Y / NbChunk),
+        FMath::FloorToInt((float)Coord.Z / NbChunk)
+    );
+
+    return ClusterCoord;
+}
+
     
 
 
@@ -477,7 +512,6 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
             // Priorité horizontale
             int32 RingA = FMath::Max(FMath::Abs(DeltaA.X), FMath::Abs(DeltaA.Y));
             int32 RingB = FMath::Max(FMath::Abs(DeltaB.X), FMath::Abs(DeltaB.Y));
-            //UE_LOG(LogTemp, Warning, TEXT("Ring A : %d ------------- Ring B : %d"), RingA, RingB);
             if (RingA != RingB)
             {
                 return RingA < RingB;

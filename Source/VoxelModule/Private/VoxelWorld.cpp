@@ -37,7 +37,7 @@ void AVoxelWorld::BeginPlay()
             UE_LOG(LogTemp, Error, TEXT("AVoxelWorld::BeginPlay() : ÉCHEC spawn du ChunckManager"));
         }
     }
-    GenerateWorld();
+    //GenerateWorld();
 
 
     // Optionnel : pour tester tout de suite la queue
