@@ -72,7 +72,7 @@ void AVoxelWorld::GenerateWorld()
 
                 if (ChunckManager)
                 {
-                    ChunckManager->SpawnChunk(Coord);
+                    //ChunckManager->SpawnChunk(Coord);
                 }
             }
         }

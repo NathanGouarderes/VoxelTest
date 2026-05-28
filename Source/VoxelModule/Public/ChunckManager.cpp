@@ -174,31 +174,73 @@ void AChunckManager::Tick(float DeltaTime)
             FScopeLock Lock(&VoxelWorld->ChunckMutex);
             FChunckDataStructure* ChunckData = VoxelWorld->Chuncks.Find(Result.Coord);
             if (!ChunckData) continue;
-            AVoxelChunck* VoxelChunck = ChunckData->VoxelChunck.Get();
-            if (!IsValid(VoxelChunck))
-            {
-                continue;
-            }
 
             ChunckData->Voxels = MoveTemp(Result.Voxels);
             ChunckData->bIsChunckGenerated = true;
 
-        }
+            if (Result.LOD == 0)
+            {
+                AVoxelChunck* VoxelChunck = ChunckData->VoxelChunck.Get();
+                if (!IsValid(VoxelChunck))
+                {
+                    continue;
+                }
 
-        if (!Result.bIsAllEmpty && Result.bIsAllSolid)
-        {
-            DirtyChuncks.Add(Result.Coord);
-        }
-        const FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
-        for (const FIntVector& Dir : Dirs)
-        {
-            FIntVector NeighborCoord = Result.Coord + Dir;
-            FScopeLock Lock(&VoxelWorld->ChunckMutex);
-            if (VoxelWorld->Chuncks.Contains(NeighborCoord))
-                DirtyChuncks.Add(NeighborCoord);
+                if (!Result.bIsAllEmpty)
+                {
+                    DirtyChuncks.Add(Result.Coord);
+                }
+                const FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
+                for (const FIntVector& Dir : Dirs)
+                {
+                    FIntVector NeighborCoord = Result.Coord + Dir;
+                    if (VoxelWorld->Chuncks.Contains(NeighborCoord))
+                        DirtyChuncks.Add(NeighborCoord);
+                }
+            }
+            else
+            {
+                PendingClusterCoordToApply.Enqueue(Result.Coord);
+            }
+
         }
         Count++;
         
+    }
+
+    FClusterGenResult ClusterResult;
+    while (ClusterGenerationResult.Dequeue(ClusterResult))
+    {
+        FIntVector ClusterCoord = GetClusterCoord(ClusterResult.MeshData.ChunckCoord, ClusterResult.LOD);
+        switch (ClusterResult.LOD)
+        {
+        case 1:
+            ClusterMapTier1.FindOrAdd(ClusterCoord).Add(ClusterResult.MeshData);
+            if (ClusterMapTier1[ClusterCoord].Num() == 64)
+            {
+                ApplyMeshToCluster(ClusterMapTier1[ClusterCoord], ClusterPoolTier1, ClusterCoord, ClusterResult.LOD);
+                ClusterMapTier1.Remove(ClusterCoord);
+            }
+            break;
+        case 2:
+            ClusterMapTier2.FindOrAdd(ClusterCoord).Add(ClusterResult.MeshData);
+            if (ClusterMapTier2[ClusterCoord].Num() == 4096)
+            {
+                ApplyMeshToCluster(ClusterMapTier2[ClusterCoord], ClusterPoolTier2, ClusterCoord, ClusterResult.LOD);
+                ClusterMapTier2.Remove(ClusterCoord);
+            }
+            break;
+        case 3:
+            ClusterMapTier3.FindOrAdd(ClusterCoord).Add(ClusterResult.MeshData);
+            if (ClusterMapTier3[ClusterCoord].Num() == 32768)
+            {
+                ApplyMeshToCluster(ClusterMapTier3[ClusterCoord], ClusterPoolTier3, ClusterCoord, ClusterResult.LOD);
+                ClusterMapTier3.Remove(ClusterCoord);
+            }
+            break;
+        default:
+            break;
+        }
     }
 
 
@@ -239,6 +281,7 @@ void AChunckManager::Tick(float DeltaTime)
             }
             
             DirtyChuncks.Remove(Coord);
+            RebuildCount++;
         }
     }
     while (CurrentMeshJob < MaxMeshJob && !PendingMeshToApply.IsEmpty())
@@ -259,6 +302,18 @@ void AChunckManager::Tick(float DeltaTime)
         
         ChunckToProcess->GenerateAsyncGreedyMesh();
     }
+
+    while (CurrentMeshJob < MaxMeshJob && !PendingClusterCoordToApply.IsEmpty())
+    {
+        FIntVector Coord;
+        if (!PendingClusterCoordToApply.Dequeue(Coord))
+        {
+            break;
+        }
+        CurrentMeshJob++;
+        GenerateGreedyMesh(Coord);
+
+    }
 }
 
 int32 AChunckManager::GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const
@@ -272,10 +327,11 @@ int32 AChunckManager::GetLODForChunck(const FIntVector& Coord, const FVector& Pl
     {
         if (Dist < LODDistances[i])
         {
+            UE_LOG(LogTemp, Warning, TEXT("AChunckManager::GetLODForChunck --> ChunkCoord : X %d Y %d, Z %d, LOD : %d"), Coord.X, Coord.Y, Coord.Z, FMath::Clamp(i, 0, MaxLOD));
             return FMath::Clamp(i, 0, MaxLOD);
         }
     }
-    UE_LOG(LogTemp, Warning, TEXT("AChunckManager::GetLODForChunck --> ChunkCoord : X %d Y %d, Z %d, LOD : "), Coord.X, Coord.Y, Coord.Z, MaxLOD);
+    UE_LOG(LogTemp, Warning, TEXT("AChunckManager::GetLODForChunck --> ChunkCoord : X %d Y %d, Z %d, LOD : %d"), Coord.X, Coord.Y, Coord.Z, MaxLOD);
     return MaxLOD;
 }
 
@@ -443,9 +499,92 @@ FIntVector AChunckManager::GetClusterCoord(FIntVector Coord, int LOD)
 }
 
     
+void AChunckManager::ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD)
+{
+    int32 NbChunk = 0;
+
+    switch (LOD)
+    {
+    case 1:
+        NbChunk = 4;
+        break;
+    case 2:
+        NbChunk = 16;
+        break;
+    case 3:
+        NbChunk = 32;
+        break;
+    default:
+        NbChunk = 4;
+        break;
+    }
+    float ClusterSize = NbChunk * ChunkSize * VoxelSize;
+    FIntVector ClusterOrigine = ClusterCoord * ClusterSize;
+
+    TArray<FVector> MergedVertices;
+    TArray<int32> MergedTriangles;
+    TArray<FVector> MergedNormals;
+    TArray<FVector2D> MergedUVs;
+    TArray<FProcMeshTangent> MergedTangents;
 
 
-void AChunckManager::SpawnChunk(FIntVector Coord)
+    for (const FChunckMeshData& ChunkMesh : ChunkMeshData)
+    {
+        FIntVector OffsetWorld = FIntVector(
+            ChunkMesh.ChunckCoord.X * (VoxelSize * ChunkSize),
+            ChunkMesh.ChunckCoord.Y * (VoxelSize * ChunkSize),
+            ChunkMesh.ChunckCoord.Z * (VoxelSize * ChunkSize)
+        );
+        FIntVector OffsetRelatif = OffsetWorld - ClusterOrigine;
+
+        int32 VertexOffset = MergedVertices.Num();
+
+        for (const FVector& Vertex : ChunkMesh.Vertices)
+        {
+            MergedVertices.Add(Vertex + FVector(OffsetRelatif));
+        }
+
+        for (const int32& Triangle : ChunkMesh.Triangles)
+        {
+            MergedTriangles.Add(Triangle + VertexOffset);
+        }
+        for (const FVector& Normal : ChunkMesh.Normals)
+        {
+            MergedNormals.Add(Normal );
+        }
+        for (const FVector2D& Uv : ChunkMesh.UVs)
+        {
+            MergedUVs.Add(Uv);
+        }
+        for (const FProcMeshTangent& Tangent : ChunkMesh.Tangents)
+        {
+            MergedTangents.Add(Tangent);
+        }
+    }
+    UProceduralMeshComponent* PMC = ClusterPool.FindOrAdd(ClusterCoord);
+    if (!PMC)
+    {
+        PMC = NewObject<UProceduralMeshComponent>(this);
+        PMC->RegisterComponent();
+        PMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+        PMC->SetWorldLocation(FVector(ClusterOrigine));
+        ClusterPool[ClusterCoord] = PMC;
+    }
+    PMC->CreateMeshSection(
+        0,
+        MergedVertices,
+        MergedTriangles,
+        MergedNormals,
+        MergedUVs,
+        TArray<FColor>(),
+        MergedTangents,
+        false
+    );
+   
+}
+
+
+void AChunckManager::SpawnChunk(FIntVector Coord, int32 LOD)
 {
     if (!VoxelWorld || !VoxelChunckClass || !IsValid(VoxelWorld))
         return;
@@ -455,31 +594,36 @@ void AChunckManager::SpawnChunk(FIntVector Coord)
     }
 
     FVector Location = FVector(Coord) * ChunkSize * VoxelSize;
-
-    AVoxelChunck* VoxelChunck = GetWorld()->SpawnActor<AVoxelChunck>(
-        VoxelChunckClass, Location, FRotator::ZeroRotator);
-
-    //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::SpawnChunk(FIntVector Coord) --> SPAWN Chunk %s at WorldPos %s"), *Coord.ToString(), *Location.ToString());
-
-    if (!IsValid(VoxelChunck))
-    {
-        UE_LOG(LogTemp, Error, TEXT("AChunckManager::SpawnChunk(FIntVector Coord) --> VoxelChunck null"));
-        return;
-    }
-
-    // 1️⃣ Data
     FChunckDataStructure NewData;
     NewData.Voxels.SetNum(ChunkSize * ChunkSize * ChunkSize);
-    NewData.VoxelChunck = VoxelChunck;
+
+    if (LOD == 0)
+    {
+        AVoxelChunck* VoxelChunck = GetWorld()->SpawnActor<AVoxelChunck>(
+            VoxelChunckClass, Location, FRotator::ZeroRotator);
+
+        //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::SpawnChunk(FIntVector Coord) --> SPAWN Chunk %s at WorldPos %s"), *Coord.ToString(), *Location.ToString());
+
+        if (!IsValid(VoxelChunck))
+        {
+            UE_LOG(LogTemp, Error, TEXT("AChunckManager::SpawnChunk(FIntVector Coord) --> VoxelChunck null"));
+            return;
+        }
+
+        NewData.VoxelChunck = VoxelChunck;
+        VoxelChunck->SetChunckManager(this);
+        VoxelChunck->Coord = Coord;
+
+    }
     
-    //VoxelWorld->Chuncks.Add(Coord, NewData);
+
+    // 1️⃣ Data
+    
     {
         FScopeLock Lock(&VoxelWorld->ChunckMutex);
         NewData.GenerationId = 1;
         VoxelWorld->Chuncks.Add(Coord, MoveTemp(NewData));
     }
-    VoxelChunck->SetChunckManager(this);
-    VoxelChunck->Coord = Coord;
 
     ChunckGenerationQueue.Enqueue(Coord);
     
@@ -532,7 +676,7 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
             {
                 break;
             }
-            SpawnChunk(Coord);
+            SpawnChunk(Coord, DesiredLOD);
 
             SpawnCount++;
         }

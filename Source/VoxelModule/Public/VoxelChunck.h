@@ -39,7 +39,7 @@ public:
 	float GetVoxelSize();
 	//void GenerateFacedMesh();
 	void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
-	void GenerateAsyncGreedyMesh(int32 InLOD = 0);
+	void GenerateAsyncGreedyMesh();
 	void ApplyMesh(const FChunckMeshData& MeshData);
 	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;

@@ -231,7 +231,7 @@ void AVoxelChunck::AddQuadXNegative(int x, int y, int z, int width, int height, 
 }
 
 
-void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
+void AVoxelChunck::GenerateAsyncGreedyMesh()
 {
 	if (!ChunckManager || !ChunckManager->VoxelWorld)
 		return;
@@ -299,8 +299,8 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 
 
 	//TArray<FVoxelDataStructure> LocalVoxels = CD->Voxels;
-
-	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakManager, PaddedVoxels = MoveTemp(PaddedVoxels)]() mutable
+	int32 CapturedLOD = CurrentLOD;
+	Async(EAsyncExecution::ThreadPool, [WeakThis, WeakManager, PaddedVoxels = MoveTemp(PaddedVoxels), CapturedLOD]() mutable
 		{
 			FChunckMeshData MeshData;
 
@@ -310,7 +310,7 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 			}
 
 			WeakThis->GenerateGreedyMesh(MeshData, PaddedVoxels);
-			AsyncTask(ENamedThreads::GameThread, [WeakThis, WeakManager, MeshData = MoveTemp(MeshData)]() mutable
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, WeakManager, MeshData = MoveTemp(MeshData), CapturedLOD]() mutable
 				{
 					if (!WeakThis.IsValid())
 					{
@@ -321,12 +321,24 @@ void AVoxelChunck::GenerateAsyncGreedyMesh(int32 InLOD /*= 0*/)
 					{
 						return;
 					}
-					Chunck->ApplyMesh(MeshData);
-					
-
-					if (AChunckManager* Manager = WeakManager.Get())
+					if (CapturedLOD == 0)
 					{
-						Manager->CurrentMeshJob = FMath::Max(0, Manager->CurrentMeshJob - 1);
+						Chunck->ApplyMesh(MeshData);
+						if (AChunckManager* Manager = WeakManager.Get())
+						{
+							Manager->CurrentMeshJob = FMath::Max(0, Manager->CurrentMeshJob - 1);
+						}
+					}
+					else
+					{
+						if (AChunckManager* Manager = WeakManager.Get())
+						{
+							FClusterGenResult ClusterGenResult;
+							ClusterGenResult.LOD = CapturedLOD;
+							ClusterGenResult.MeshData = MeshData;
+							Manager->ClusterGenerationResult.Enqueue(ClusterGenResult);
+							Manager->CurrentMeshJob = FMath::Max(0, Manager->CurrentMeshJob - 1);
+						}
 					}
 					Chunck->bIsQueued = false;
 				});

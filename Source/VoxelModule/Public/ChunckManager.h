@@ -12,6 +12,7 @@
 #include "EChunkVariant.h"
 #include "FChunckGenJob.h"
 #include "FChunkGenResult.h"
+#include "FClusterGenData.h"
 #include "ChunckManager.generated.h"
 
 class ChunckGenWorker;
@@ -36,7 +37,7 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void RegisterDirtyChunk(FIntVector Coord);
-	void SpawnChunk(FIntVector Coord);
+	void SpawnChunk(FIntVector Coord, int32 LOD);
 	void UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep);
 	void GetAllPlayerChunks(TSet<FIntVector>& GlobalChunksToKeep);
 	FIntVector GetPlayerChunck(const FVector& PlayerPos) const;
@@ -44,6 +45,7 @@ public:
 	void FillChunck(EChunkVariant Variant, FIntVector Coord);
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
+	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
 
@@ -60,8 +62,8 @@ public:
 	int ChunkSize = 32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 10;
-	int32 VerticalViewDistance = 5;
+	int32 HorizontalViewDistance = 20;
+	int32 VerticalViewDistance = 15;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	TArray<float> LODDistances = { 3200.0f, 8000.0f, 16000.0f, 32000.0f };
@@ -84,10 +86,12 @@ public:
 	TQueue<FIntVector> ChunckGenerationQueue;
 	TQueue<FChunkGenJob, EQueueMode::Mpsc> ChunckGenerationJobQueue;
 	TQueue<FChunkGenResult, EQueueMode::Mpsc> ChunckGenerationResult;
+	TQueue<FIntVector, EQueueMode::Mpsc> PendingClusterCoordToApply;
+	TQueue<FClusterGenResult, EQueueMode::Mpsc> ClusterGenerationResult;
 	TArray<FRunnableThread*> WorkerThreads;
 	TArray<ChunckGenWorker*> Workers;
 	FCriticalSection DequeueMutex;
-	TArray<TObjectPtr<AClusterChunk>> ClusterPool;
+	//TArray<TObjectPtr<AClusterChunk>> ClusterPool;
 
 	int32 NumWorkers = 6;
 
@@ -101,6 +105,10 @@ public:
 	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier1;
 	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier2;
 	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier3;
+
+	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier1;
+	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier2;
+	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier3;
 
 
 	//Bruit

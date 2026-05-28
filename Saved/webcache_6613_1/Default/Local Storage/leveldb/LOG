@@ -1,3 +1,2 @@
-2026/05/21-07:57:52.665 6510 Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/21-07:57:52.672 6510 Recovering log #3
-2026/05/21-07:57:52.674 6510 Reusing old log C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\Local Storage\leveldb/000003.log 
+2026/05/26-20:22:56.551 772c Creating DB C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\Local Storage\leveldb since it was missing.
+2026/05/26-20:22:56.590 772c Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\Local Storage\leveldb/MANIFEST-000001

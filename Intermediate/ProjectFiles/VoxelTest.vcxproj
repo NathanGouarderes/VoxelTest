@@ -549,10 +549,6 @@
       <AdditionalIncludeDirectories>$(ClCompile_AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(ClCompile_ForcedIncludeFiles)</ForcedIncludeFiles>
     </ClCompile>
-    <ClCompile Include="..\..\Source\VoxelModule\Private\ClusterChunk.cpp">
-      <AdditionalIncludeDirectories>$(ClCompile_AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <ForcedIncludeFiles>$(ClCompile_ForcedIncludeFiles)</ForcedIncludeFiles>
-    </ClCompile>
     <ClCompile Include="..\..\Source\VoxelModule\Private\FChunkMeshResult.cpp">
       <AdditionalIncludeDirectories>$(ClCompile_AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(ClCompile_ForcedIncludeFiles)</ForcedIncludeFiles>
@@ -596,6 +592,7 @@
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunckMeshData.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunkGenResult.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FChunkMeshResult.h"/>
+    <ClInclude Include="..\..\Source\VoxelModule\Public\FClusterGenData.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FVoxelDataStructure.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\FVoxelMaterial.h"/>
     <ClInclude Include="..\..\Source\VoxelModule\Public\Structs\FQuad.h"/>

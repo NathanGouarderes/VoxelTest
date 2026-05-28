@@ -9,4 +9,5 @@ struct FChunckMeshData
     TArray<FVector> Normals;
     TArray<FProcMeshTangent> Tangents;
     TArray<FColor> VertexColors;
+    FIntVector ChunckCoord;
 };
