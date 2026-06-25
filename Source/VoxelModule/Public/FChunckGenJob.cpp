@@ -1,7 +1,7 @@
 #include "FChunckGenJob.h"
 #include "ChunckManager.h"
 
-FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager) : Coord(InCoord), Variant(InVariant) {
+FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD) : Coord(InCoord), Variant(InVariant), LOD(InLOD) {
     if (Manager)
     {
         ChunkSize = Manager->ChunkSize;
@@ -11,6 +11,7 @@ FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckM
         CaveFrequency = Manager->CaveFrequency;
         CaveThreshold = Manager->CaveThreshold;
         SeaLevel = Manager->SeaLevel;
+
 
         // On copie la configuration du bruit
         SurfaceNoise = Manager->SurfaceNoise;

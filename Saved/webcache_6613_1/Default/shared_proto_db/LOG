@@ -1,2 +1,3 @@
-2026/05/26-20:23:05.255 75d0 Creating DB C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\shared_proto_db since it was missing.
-2026/05/26-20:23:05.277 75d0 Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\shared_proto_db/MANIFEST-000001
+2026/06/25-07:44:59.594 37d8 Reusing MANIFEST C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\shared_proto_db/MANIFEST-000001
+2026/06/25-07:44:59.604 37d8 Recovering log #3
+2026/06/25-07:44:59.606 37d8 Reusing old log C:\Users\natha\Documents\Unreal Projects\VoxelTest\Saved\webcache_6613_1\Default\shared_proto_db/000003.log 

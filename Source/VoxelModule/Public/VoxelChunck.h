@@ -9,15 +9,10 @@
 #include "Math/IntVector.h"
 #include "FChunckMeshData.h"
 #include "FVoxelDataStructure.h"
+#include "FMask.h"
 #include "VoxelChunck.generated.h"
 
 class AChunckManager;
-
-struct FMask
-{
-	int8 Block = 0;
-	int8 Normal = 0;
-};
 
 
 UCLASS()
@@ -38,8 +33,8 @@ public:
 	virtual void Tick(float DeltaTime) override;	
 	float GetVoxelSize();
 	//void GenerateFacedMesh();
-	void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
-	void GenerateAsyncGreedyMesh();
+	//void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
+	//void GenerateAsyncGreedyMesh();
 	void ApplyMesh(const FChunckMeshData& MeshData);
 	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
@@ -70,6 +65,7 @@ public:
 	UProceduralMeshComponent* ProceduralMeshComponent;
 	float VoxelSize;
 	FChunckMeshData ChunckDataMesh;
+	UPROPERTY()
 	AChunckManager* ChunckManager;
 	FIntVector Coord;
 	bool bIsQueued;

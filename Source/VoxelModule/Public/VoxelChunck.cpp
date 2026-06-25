@@ -230,11 +230,14 @@ void AVoxelChunck::AddQuadXNegative(int x, int y, int z, int width, int height, 
 	AddQuad(P0, P1, P2, P3, FVector(-1, 0, 0), MeshData);
 }
 
-
+/*
 void AVoxelChunck::GenerateAsyncGreedyMesh()
 {
-	if (!ChunckManager || !ChunckManager->VoxelWorld)
+	if (!IsValid(this) || bIsBeingDestroyed)
 		return;
+	if (!IsValid(ChunckManager) || !IsValid(ChunckManager->VoxelWorld))
+		return;
+	
 
 	FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
 	const FChunckDataStructure* CD = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
@@ -449,6 +452,8 @@ void AVoxelChunck::GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FV
         }
     }
 }
+
+*/
 
 void AVoxelChunck::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 Step)
 {

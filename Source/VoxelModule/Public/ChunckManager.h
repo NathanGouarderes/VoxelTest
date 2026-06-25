@@ -13,6 +13,7 @@
 #include "FChunckGenJob.h"
 #include "FChunkGenResult.h"
 #include "FClusterGenData.h"
+#include "FMask.h"
 #include "ChunckManager.generated.h"
 
 class ChunckGenWorker;
@@ -37,19 +38,29 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void RegisterDirtyChunk(FIntVector Coord);
-	void SpawnChunk(FIntVector Coord, int32 LOD);
+	void SpawnChunk(FIntVector Coord, int32 LOD, int32 GenerationId);
 	void UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep);
 	void GetAllPlayerChunks(TSet<FIntVector>& GlobalChunksToKeep);
 	FIntVector GetPlayerChunck(const FVector& PlayerPos) const;
 	void GenerateTerrain(FChunckDataStructure& Data, FIntVector Coord);
-	void FillChunck(EChunkVariant Variant, FIntVector Coord);
+	void FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD);
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
+	int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
+	
+	void GenerateAsyncGreedyMesh(FIntVector Coord);
+	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
+	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
+	bool CompareMask(const FMask& M1, const FMask& M2) const;
+	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize);
+	
+	//void GenerateAsyncGreedyMeshForCluster(FIntVector Coord);
 	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
 
 	TSet<FIntVector> DirtyChuncks;
+	TSet<FIntVector> PendingLODMesh;
 	UPROPERTY(EditAnywhere, Category = "Voxel")
 	TSubclassOf<AVoxelChunck> VoxelChunckClass;
 
@@ -62,11 +73,11 @@ public:
 	int ChunkSize = 32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 20;
-	int32 VerticalViewDistance = 15;
+	int32 HorizontalViewDistance = 30;
+	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 3200.0f, 8000.0f, 16000.0f, 32000.0f };
+	TArray<float> LODDistances = { 1000.0f, 8000.0f, 16000.0f, 32000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -82,7 +93,7 @@ public:
 	FIntVector LastPlayerChunk = FIntVector::ZeroValue;
 	TMap<APawn*, FIntVector> LastPlayerChunks;
 	bool bNeedUpdate;
-	TQueue<AVoxelChunck*, EQueueMode::Mpsc> PendingMeshToApply;
+	TQueue<FIntVector, EQueueMode::Mpsc> PendingMeshToApply;
 	TQueue<FIntVector> ChunckGenerationQueue;
 	TQueue<FChunkGenJob, EQueueMode::Mpsc> ChunckGenerationJobQueue;
 	TQueue<FChunkGenResult, EQueueMode::Mpsc> ChunckGenerationResult;
