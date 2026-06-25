@@ -59,6 +59,24 @@ public:
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
 
+	// === Cluster volume meshing ===
+	int32 GetNbChunkForLOD(int32 LOD) const;
+	bool SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ);
+	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
+		TArray<FVoxelDataStructure>& OutVolume, int32& OutSX, int32& OutSY, int32& OutSZ);
+	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
+		const TArray<FVoxelDataStructure>& Pad, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
+	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
+	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
+	void ProcessPendingClusters();
+
+	TSet<FIntVector> PendingClusterTier1;
+	TSet<FIntVector> PendingClusterTier2;
+	TSet<FIntVector> PendingClusterTier3;
+
+	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
+	int32 MaxClusterDispatchPerFrame = 4;
+
 	TSet<FIntVector> DirtyChuncks;
 	TSet<FIntVector> PendingLODMesh;
 	UPROPERTY(EditAnywhere, Category = "Voxel")
@@ -73,7 +91,7 @@ public:
 	int ChunkSize = 32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 30;
+	int32 HorizontalViewDistance = 50;
 	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")

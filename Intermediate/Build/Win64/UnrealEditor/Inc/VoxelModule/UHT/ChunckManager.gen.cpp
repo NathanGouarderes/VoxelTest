@@ -58,6 +58,10 @@ struct Z_Construct_UClass_AChunckManager_Statics
 		{ "IncludePath", "ChunckManager.h" },
 		{ "ModuleRelativePath", "Public/ChunckManager.h" },
 	};
+	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_MaxClusterDispatchPerFrame_MetaData[] = {
+		{ "Category", "Voxel | Performance" },
+		{ "ModuleRelativePath", "Public/ChunckManager.h" },
+	};
 	static constexpr UECodeGen_Private::FMetaDataPairParam NewProp_VoxelChunckClass_MetaData[] = {
 		{ "Category", "Voxel" },
 		{ "ModuleRelativePath", "Public/ChunckManager.h" },
@@ -150,6 +154,7 @@ struct Z_Construct_UClass_AChunckManager_Statics
 #endif // WITH_METADATA
 
 // ********** Begin Class AChunckManager constinit property declarations ***************************
+	static const UECodeGen_Private::FIntPropertyParams NewProp_MaxClusterDispatchPerFrame;
 	static const UECodeGen_Private::FClassPropertyParams NewProp_VoxelChunckClass;
 	static const UECodeGen_Private::FObjectPropertyParams NewProp_VoxelWorld;
 	static const UECodeGen_Private::FIntPropertyParams NewProp_VoxelSize;
@@ -176,6 +181,7 @@ struct Z_Construct_UClass_AChunckManager_Statics
 }; // struct Z_Construct_UClass_AChunckManager_Statics
 
 // ********** Begin Class AChunckManager Property Definitions **************************************
+const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxClusterDispatchPerFrame = { "MaxClusterDispatchPerFrame", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, MaxClusterDispatchPerFrame), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_MaxClusterDispatchPerFrame_MetaData), NewProp_MaxClusterDispatchPerFrame_MetaData) };
 const UECodeGen_Private::FClassPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelChunckClass = { "VoxelChunckClass", nullptr, (EPropertyFlags)0x0014000000000001, UECodeGen_Private::EPropertyGenFlags::Class, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, VoxelChunckClass), Z_Construct_UClass_UClass_NoRegister, Z_Construct_UClass_AVoxelChunck_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelChunckClass_MetaData), NewProp_VoxelChunckClass_MetaData) };
 const UECodeGen_Private::FObjectPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelWorld = { "VoxelWorld", nullptr, (EPropertyFlags)0x0010000000000000, UECodeGen_Private::EPropertyGenFlags::Object, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, VoxelWorld), Z_Construct_UClass_AVoxelWorld_NoRegister, METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelWorld_MetaData), NewProp_VoxelWorld_MetaData) };
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelSize = { "VoxelSize", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, VoxelSize), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_VoxelSize_MetaData), NewProp_VoxelSize_MetaData) };
@@ -193,6 +199,7 @@ const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_
 const UECodeGen_Private::FFloatPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_CaveThreshold = { "CaveThreshold", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Float, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, CaveThreshold), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_CaveThreshold_MetaData), NewProp_CaveThreshold_MetaData) };
 const UECodeGen_Private::FIntPropertyParams Z_Construct_UClass_AChunckManager_Statics::NewProp_SeaLevel = { "SeaLevel", nullptr, (EPropertyFlags)0x0010000000000001, UECodeGen_Private::EPropertyGenFlags::Int, RF_Public|RF_Transient|RF_MarkAsNative, nullptr, nullptr, 1, STRUCT_OFFSET(AChunckManager, SeaLevel), METADATA_PARAMS(UE_ARRAY_COUNT(NewProp_SeaLevel_MetaData), NewProp_SeaLevel_MetaData) };
 const UECodeGen_Private::FPropertyParamsBase* const Z_Construct_UClass_AChunckManager_Statics::PropPointers[] = {
+	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_MaxClusterDispatchPerFrame,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelChunckClass,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelWorld,
 	(const UECodeGen_Private::FPropertyParamsBase*)&Z_Construct_UClass_AChunckManager_Statics::NewProp_VoxelSize,
@@ -251,10 +258,10 @@ AChunckManager::~AChunckManager() {}
 struct Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics
 {
 	static constexpr FClassRegisterCompiledInInfo ClassInfo[] = {
-		{ Z_Construct_UClass_AChunckManager, AChunckManager::StaticClass, TEXT("AChunckManager"), &Z_Registration_Info_UClass_AChunckManager, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AChunckManager), 2518021430U) },
+		{ Z_Construct_UClass_AChunckManager, AChunckManager::StaticClass, TEXT("AChunckManager"), &Z_Registration_Info_UClass_AChunckManager, CONSTRUCT_RELOAD_VERSION_INFO(FClassReloadVersionInfo, sizeof(AChunckManager), 3540060807U) },
 	};
 }; // Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics 
-static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_4286763032{
+static FRegisterCompiledInInfo Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_294863056{
 	TEXT("/Script/VoxelModule"),
 	Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics::ClassInfo, UE_ARRAY_COUNT(Z_CompiledInDeferFile_FID_Users_natha_Documents_Unreal_Projects_VoxelTest_Source_VoxelModule_Public_ChunckManager_h__Script_VoxelModule_Statics::ClassInfo),
 	nullptr, 0,
