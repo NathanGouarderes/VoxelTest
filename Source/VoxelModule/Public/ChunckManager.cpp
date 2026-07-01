@@ -445,13 +445,13 @@ FIntVector AChunckManager::GetClusterCoord(FIntVector Coord, int LOD)
     
 
 
-void AChunckManager::SpawnChunk(FIntVector Coord)
+bool AChunckManager::SpawnChunk(FIntVector Coord)
 {
     if (!VoxelWorld || !VoxelChunckClass || !IsValid(VoxelWorld))
-        return;
+        return false;
     if (VoxelWorld->Chuncks.Contains(Coord))
     {
-        return;
+        return false;
     }
 
     FVector Location = FVector(Coord) * ChunkSize * VoxelSize;
@@ -464,7 +464,7 @@ void AChunckManager::SpawnChunk(FIntVector Coord)
     if (!IsValid(VoxelChunck))
     {
         UE_LOG(LogTemp, Error, TEXT("AChunckManager::SpawnChunk(FIntVector Coord) --> VoxelChunck null"));
-        return;
+        return false;
     }
 
     // 1️⃣ Data
@@ -482,8 +482,7 @@ void AChunckManager::SpawnChunk(FIntVector Coord)
     VoxelChunck->Coord = Coord;
 
     ChunckGenerationQueue.Enqueue(Coord);
-    
-
+    return true;  
 }
 
 void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
@@ -632,8 +631,7 @@ bool AChunckManager::UpdatePlayerChunkState()
 
 void AChunckManager::MarkVisibilityClean()
 {
-    bVisibilityInitialized = true;
-    bNeedsInitialBuild = false
+    bNeedsInitialBuild = false;
     bPlayerChangedChunk = false;
     bStreamingSettingsDirty = false;
     bForceVisibilityRefresh = false;
@@ -812,3 +810,311 @@ void AChunckManager::ProcessSpawnQueue()
     }
 }
 
+void AChunckManager::ProcessGenerationQueue()
+{
+    
+if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+
+    int32 DispatchedThisFrame = 0;
+
+    while (DispatchedThisFrame < MaxGenPerFrame)
+    {
+        FIntVector Coord(0, 0, 0);
+
+        // 1) On sort une coordonnée de la file "chunks à générer"
+        if (!ChunckGenerationQueue.Dequeue(Coord))
+        {
+            break; // plus rien à traiter cette frame
+        }
+
+        bool bShouldDispatchGeneration = false;
+
+        {
+            // 2) On valide que le chunk existe toujours
+            //    et qu'il n'est pas déjà marqué comme généré
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+
+            FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(Coord);
+            if (ChunkData && !ChunkData->bIsChunckGenerated)
+            {
+                bShouldDispatchGeneration = true;
+            }
+        }
+
+        // 3) Si le chunk n'existe plus ou a déjà été généré, on ignore
+        if (!bShouldDispatchGeneration)
+        {
+            continue;
+        }
+
+        // 4) FillChunck pousse le job réel dans ChunckGenerationJobQueue
+        FillChunck(EChunkVariant::Full, Coord);
+
+        ++DispatchedThisFrame;
+    }
+}
+
+
+void AChunckManager::ProcessGenerationResults()
+{
+    
+if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+
+    constexpr int32 MaxApplyPerFrame = 30;
+    int32 AppliedThisFrame = 0;
+
+    FChunkGenResult Result;
+    static const FIntVector NeighborDirs[6] =
+    {
+        FIntVector(-1,  0,  0),
+        FIntVector( 1,  0,  0),
+        FIntVector( 0, -1,  0),
+        FIntVector( 0,  1,  0),
+        FIntVector( 0,  0, -1),
+        FIntVector( 0,  0,  1)
+    };
+
+    while (AppliedThisFrame < MaxApplyPerFrame && ChunckGenerationResult.Dequeue(Result))
+    {
+        bool bAcceptedResult = false;
+        bool bMarkSelfDirty = false;
+        TArray<FIntVector, TInlineAllocator<6>> NeighborsToMarkDirty;
+
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+
+            FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(Result.Coord);
+            if (!ChunkData)
+            {
+                continue;
+            }
+
+            AVoxelChunck* VoxelChunck = ChunkData->VoxelChunck.Get();
+            if (!IsValid(VoxelChunck))
+            {
+                continue;
+            }
+
+            // Injection des voxels générés
+            ChunkData->Voxels = MoveTemp(Result.Voxels);
+            ChunkData->bIsChunckGenerated = true;
+
+            // Si le chunk n'est pas totalement vide, on demandera un rebuild mesh
+            bMarkSelfDirty = !Result.bIsAllEmpty;
+
+            // On capture les voisins existants pendant qu'on tient le lock
+            for (const FIntVector& Dir : NeighborDirs)
+            {
+                const FIntVector NeighborCoord = Result.Coord + Dir;
+                if (VoxelWorld->Chuncks.Contains(NeighborCoord))
+                {
+                    NeighborsToMarkDirty.Add(NeighborCoord);
+                }
+            }
+
+            bAcceptedResult = true;
+        }
+
+        if (!bAcceptedResult)
+        {
+            continue;
+        }
+
+        if (bMarkSelfDirty)
+        {
+            DirtyChuncks.Add(Result.Coord);
+        }
+
+        for (const FIntVector& NeighborCoord : NeighborsToMarkDirty)
+        {
+            DirtyChuncks.Add(NeighborCoord);
+        }
+
+        ++AppliedThisFrame;
+    }
+}
+
+
+void AChunckManager::ProcessDirtyChunks()
+{
+    if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    APlayerController* PC = World->GetFirstPlayerController();
+    if (!PC)
+    {
+        return;
+    }
+
+    APawn* Pawn = PC->GetPawn();
+    if (!IsValid(Pawn))
+    {
+        return;
+    }
+
+    const FVector PlayerPos = Pawn->GetActorLocation();
+
+    // DirtyChuncks est un TSet -> on le copie en tableau pour pouvoir trier proprement
+    TArray<FIntVector> DirtyToProcess = DirtyChuncks.Array();
+
+    DirtyToProcess.Sort([&](const FIntVector& A, const FIntVector& B)
+    {
+        const FVector PosA = FVector(A) * (ChunkSize * VoxelSize);
+        const FVector PosB = FVector(B) * (ChunkSize * VoxelSize);
+        return FVector::DistSquared(PlayerPos, PosA) < FVector::DistSquared(PlayerPos, PosB);
+    });
+
+    int32 RebuildCount = 0;
+
+    for (const FIntVector& Coord : DirtyToProcess)
+    {
+        if (RebuildCount >= MaxRebuildPerFrame)
+        {
+            break;
+        }
+
+        // Si le coord a déjà été retiré entre-temps, on saute
+        if (!DirtyChuncks.Contains(Coord))
+        {
+            continue;
+        }
+
+        const int32 DesiredLODLocal = GetLODForChunck(Coord, PlayerPos);
+
+        AVoxelChunck* VoxelChunck = nullptr;
+        bool bRemoveDirty = false;
+        bool bCanQueueMesh = false;
+
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+
+            FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(Coord);
+
+            // Chunk supprimé du monde -> on nettoie le dirty
+            if (!ChunkData)
+            {
+                bRemoveDirty = true;
+            }
+            // Chunk pas encore généré -> on le laisse dirty pour une frame future
+            else if (!ChunkData->bIsChunckGenerated)
+            {
+                continue;
+            }
+            else
+            {
+                VoxelChunck = ChunkData->VoxelChunck.Get();
+
+                // Dans ton architecture actuelle, PendingMeshToApply contient des AVoxelChunck*
+                // donc si l'acteur n'est pas valide, on ne peut pas le mesher par ce chemin.
+                if (!IsValid(VoxelChunck))
+                {
+                    bRemoveDirty = true;
+                }
+                else
+                {
+                    bCanQueueMesh = true;
+                }
+            }
+        }
+
+        if (bRemoveDirty)
+        {
+            DirtyChuncks.Remove(Coord);
+            continue;
+        }
+
+        if (!bCanQueueMesh)
+        {
+            continue;
+        }
+
+        // On est sur le Game Thread ici : toucher l'acteur est OK par ce chemin.
+        VoxelChunck->CurrentLOD = DesiredLODLocal;
+
+        if (!VoxelChunck->bIsQueued)
+        {
+            VoxelChunck->bIsQueued = true;
+            PendingMeshToApply.Enqueue(VoxelChunck);
+            ++RebuildCount;
+        }
+
+        // Qu'il ait été mis en queue cette frame ou qu'il y soit déjà,
+        // il n'a plus besoin de rester dans DirtyChuncks.
+        DirtyChuncks.Remove(Coord);
+    }
+}
+
+void AChunckManager::ProcessMeshJobs()
+{
+    if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+
+    while (CurrentMeshJob < MaxMeshJob)
+    {
+        AVoxelChunck* ChunkToProcess = nullptr;
+
+        // 1) On dépile un chunk à mailler
+        if (!PendingMeshToApply.Dequeue(ChunkToProcess))
+        {
+            break; // plus rien à traiter cette frame
+        }
+
+        // 2) Si l'acteur n'est plus valide, on l'ignore
+        if (!IsValid(ChunkToProcess))
+        {
+            continue;
+        }
+
+        bool bCanDispatchMesh = false;
+
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+
+            FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(ChunkToProcess->Coord);
+            if (ChunkData && ChunkData->bIsChunckGenerated)
+            {
+                AVoxelChunck* CurrentChunkActor = ChunkData->VoxelChunck.Get();
+
+                // On vérifie que l'acteur en file est bien encore celui
+                // référencé par le monde voxel pour cette coordonnée.
+                if (IsValid(CurrentChunkActor) && CurrentChunkActor == ChunkToProcess)
+                {
+                    bCanDispatchMesh = true;
+                }
+            }
+        }
+
+        // 3) Si le chunk n'existe plus, n'est pas généré,
+        //    ou n'est plus l'acteur courant pour cette coordonnée : on annule.
+        if (!bCanDispatchMesh)
+        {
+            ChunkToProcess->bIsQueued = false;
+            continue;
+        }
+
+        // 4) On réserve un slot de job mesh AVANT de dispatcher
+        ++CurrentMeshJob;
+
+        // IMPORTANT :
+        // Ne PAS remettre bIsQueued à false ici.
+        // Il doit être remis à false uniquement à la fin réelle du job,
+        // dans le callback de fin / ApplyMesh côté GameThread.
+        ChunkToProcess->GenerateAsyncGreedyMesh();
+    }
+}
