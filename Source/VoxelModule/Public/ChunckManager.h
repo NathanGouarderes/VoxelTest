@@ -58,27 +58,20 @@ public:
 	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
-	    void MarkVisibilityClean();
-
+	void MarkVisibilityClean();
 	bool ShouldRebuildVisibility() const;
-
 	bool ResolveVoxelWorldIfNeeded();
-
 	void RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep);
-
 	void BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks);
-
 	void ProcessSpawnQueue();
-
 	void ProcessGenerationQueue();
-
     void ProcessGenerationResults();
-
     void ProcessDirtyChunks();
-
     void ProcessMeshJobs();
-
     void ProcessPendingClusters();
+	void ProcessUnloadQueue()
+	bool UpdatePlayerChunkState();
+
 
 
 	// === Cluster volume meshing ===
@@ -90,7 +83,6 @@ public:
 		const TArray<FVoxelDataStructure>& Pad, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
-	void ProcessPendingClusters();
 
 TQueue<FIntVector> PendingUnloadQueue;
 
@@ -98,7 +90,7 @@ TQueue<FIntVector> PendingUnloadQueue;
 
 	TSet<FIntVector> PendingSpawnSet;
 
-	TSet<FIntVector> PendingUnloadSet
+	TSet<FIntVector> PendingUnloadSet;
 
 	TSet<FIntVector> PendingClusterTier1;
 	TSet<FIntVector> PendingClusterTier2;
