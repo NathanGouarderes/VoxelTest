@@ -568,3 +568,67 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 }
 
 
+bool AChunckManager::UpdatePlayerChunkState()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        bPlayerChangedChunk = false;
+        return false;
+    }
+
+    bool bAnyChanged = false;
+
+    // Sert à savoir quels pawns existent encore cette frame
+    TSet<APawn*> SeenThisFrame;
+    SeenThisFrame.Reserve(LastPlayerChunks.Num() + 1);
+
+    for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+    {
+        APlayerController* PlayerController = It->Get();
+        if (!PlayerController)
+        {
+            continue;
+        }
+
+        APawn* Pawn = PlayerController->GetPawn();
+        if (!Pawn)
+        {
+            continue;
+        }
+
+        SeenThisFrame.Add(Pawn);
+
+        const FIntVector CurrentChunk = GetPlayerChunck(Pawn->GetActorLocation());
+
+        if (FIntVector* CachedChunk = LastPlayerChunks.Find(Pawn))
+        {
+            if (*CachedChunk != CurrentChunk)
+            {
+                *CachedChunk = CurrentChunk;
+                bAnyChanged = true;
+            }
+        }
+        else
+        {
+            LastPlayerChunks.Add(Pawn, CurrentChunk);
+            bAnyChanged = true;
+        }
+    }
+
+    // Nettoyage des pawns qui n'existent plus / ne sont plus possédés
+    for (auto It = LastPlayerChunks.CreateIterator(); It; ++It)
+    {
+        if (!SeenThisFrame.Contains(It.Key()))
+        {
+            It.RemoveCurrent();
+            bAnyChanged = true;
+        }
+    }
+
+    bPlayerChangedChunk = bAnyChanged;
+    return bAnyChanged;
+}
+
+
+
