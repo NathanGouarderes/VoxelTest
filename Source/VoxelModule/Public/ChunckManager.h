@@ -57,6 +57,7 @@ public:
     void ProcessDirtyChunks();
     void ProcessMeshJobs();
     void ProcessPendingClusters();
+	void ProcessUnloadQueue();
 
 	TQueue<FIntVector> PendingUnloadQueue;
 	TQueue<FIntVector> PendingSpawnQueue;
