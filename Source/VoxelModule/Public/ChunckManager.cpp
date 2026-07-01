@@ -632,7 +632,8 @@ bool AChunckManager::UpdatePlayerChunkState()
 
 void AChunckManager::MarkVisibilityClean()
 {
-    bVisibilityInitialized = false;
+    bVisibilityInitialized = true;
+    bNeedsInitialBuild = false
     bPlayerChangedChunk = false;
     bStreamingSettingsDirty = false;
     bForceVisibilityRefresh = false;
@@ -779,4 +780,35 @@ void AChunckManager::BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks)
     }
 }
 
+void AChunckManager::ProcessSpawnQueue()
+{
+    if (!IsValid(VoxelWorld)) return;
+
+    int32 SpawnedThisFrame = 0;
+
+    while (SpawnedThisFrame < MaxSpawnPerFrame)
+    {
+        FIntVector Coord;
+        if (!PendingSpawnQueue.Dequeue(Coord))
+        {
+            break; // file vide → terminé pour cette frame
+        }
+
+        // (2) Annulé depuis l'enfilement ? On ignore SANS consommer le budget.
+        if (!PendingSpawnSet.Contains(Coord))
+        {
+            continue;
+        }
+
+        // (3) Consommé : on resynchronise le miroir.
+        PendingSpawnSet.Remove(Coord);
+
+        // (4)+(5) SpawnChunk renvoie true seulement si elle a réellement créé le chunk.
+        //         Si le chunk existait déjà, false → on ne brûle pas de slot.
+        if (SpawnChunk(Coord))
+        {
+            ++SpawnedThisFrame;
+        }
+    }
+}
 
