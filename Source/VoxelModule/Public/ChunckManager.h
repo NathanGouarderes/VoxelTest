@@ -36,7 +36,7 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void RegisterDirtyChunk(FIntVector Coord);
-	void SpawnChunk(FIntVector Coord);
+	bool SpawnChunk(FIntVector Coord);
 	void UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep);
 	void GetAllPlayerChunks(TSet<FIntVector>& GlobalChunksToKeep);
 	FIntVector GetPlayerChunck(const FVector& PlayerPos) const;
@@ -64,7 +64,7 @@ public:
 	TSet<FIntVector> PendingUnloadSet
 
 	bool bVisibilityInitialized;
-	bool bNeedsInitialBuild;
+	bool bNeedsInitialBuild = true;
     bool bPlayerChangedChunk;
     bool bStreamingSettingsDirty;
     bool bForceVisibilityRefresh;
