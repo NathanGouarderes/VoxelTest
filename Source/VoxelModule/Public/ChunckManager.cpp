@@ -630,5 +630,153 @@ bool AChunckManager::UpdatePlayerChunkState()
     return bAnyChanged;
 }
 
+void AChunckManager::MarkVisibilityClean()
+{
+    bVisibilityInitialized = false;
+    bPlayerChangedChunk = false;
+    bStreamingSettingsDirty = false;
+    bForceVisibilityRefresh = false;
+}
+
+
+bool AChunckManager::ShouldRebuildVisibility() const
+{
+    return bNeedsInitialBuild
+        || bPlayerChangedChunk
+        || bStreamingSettingsDirty
+        || bForceVisibilityRefresh;
+}
+
+bool AChunckManager::ResolveVoxelWorldIfNeeded()
+{
+    
+     if (IsValid(VoxelWorld))
+    {
+        return true;
+    }
+
+    TArray<AActor*> ActorsFound;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AVoxelWorld::StaticClass(), ActorsFound);
+
+    if (ActorsFound.Num() > 0)
+    {
+        VoxelWorld = Cast<AVoxelWorld>(ActorsFound[0]);
+    }
+
+    return IsValid(VoxelWorld);
+}
+
+
+
+void AChunckManager::RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep)
+{
+    OutChunksToKeep.Reset();
+
+    const int32 HorizontalRadius = FMath::Max(0, HorizontalViewDistance);
+    const int32 VerticalRadius   = FMath::Max(0, VerticalViewDistance);
+    const int32 HorizontalRadiusSq = HorizontalRadius * HorizontalRadius;
+
+    // Précondition logique :
+    // LastPlayerChunks doit déjà avoir été mis à jour par UpdatePlayerChunkState()
+    for (const TPair<APawn*, FIntVector>& Source : LastPlayerChunks)
+    {
+        APawn* Pawn = Source.Key;
+        if (!IsValid(Pawn))
+        {
+            continue;
+        }
+
+        const FIntVector& Center = Source.Value;
+
+        for (int32 dx = -HorizontalRadius; dx <= HorizontalRadius; ++dx)
+        {
+            for (int32 dy = -HorizontalRadius; dy <= HorizontalRadius; ++dy)
+            {
+                // Coupe cylindrique / disque horizontal
+                const int32 DistSq = dx * dx + dy * dy;
+                if (DistSq > HorizontalRadiusSq)
+                {
+                    continue;
+                }
+
+                for (int32 dz = -VerticalRadius; dz <= VerticalRadius; ++dz)
+                {
+                    OutChunksToKeep.Add(Center + FIntVector(dx, dy, dz));
+                }
+            }
+        }
+    }
+}
+
+
+
+void AChunckManager::BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks)
+{
+    if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+
+    // =========================================================
+    // 1. SPAWN : DesiredChunks - ExistingChunks
+    // =========================================================
+    for (const FIntVector& Coord : DesiredChunks)
+    {
+        bool bAlreadyExists = false;
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+            bAlreadyExists = VoxelWorld->Chuncks.Contains(Coord);
+        }
+
+        if (!bAlreadyExists && !PendingSpawnSet.Contains(Coord))
+        {
+            PendingSpawnQueue.Enqueue(Coord);
+            PendingSpawnSet.Add(Coord);
+        }
+
+        // Si ce chunk était précédemment marqué pour unload,
+        // mais qu'il redevient désiré avant traitement, on annule juste le flag.
+        if (PendingUnloadSet.Contains(Coord))
+        {
+            PendingUnloadSet.Remove(Coord);
+            // NOTE :
+            // l'entrée éventuelle encore présente dans PendingUnloadQueue sera ignorée
+            // plus tard dans ProcessUnloadQueue() grâce au test sur PendingUnloadSet.
+        }
+    }
+
+    // =========================================================
+    // 2. UNLOAD : ExistingChunks - DesiredChunks
+    // =========================================================
+    TArray<FIntVector> ExistingCoords;
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+        ExistingCoords.Reserve(VoxelWorld->Chuncks.Num());
+
+        for (const TPair<FIntVector, FChunckDataStructure>& Pair : VoxelWorld->Chuncks)
+        {
+            ExistingCoords.Add(Pair.Key);
+        }
+    }
+
+    for (const FIntVector& Coord : ExistingCoords)
+    {
+        if (!DesiredChunks.Contains(Coord) && !PendingUnloadSet.Contains(Coord))
+        {
+            PendingUnloadQueue.Enqueue(Coord);
+            PendingUnloadSet.Add(Coord);
+        }
+
+        // Si ce chunk était précédemment en attente de spawn,
+        // mais qu'il n'est plus désiré avant traitement, on enlève juste le flag miroir.
+        if (!DesiredChunks.Contains(Coord) && PendingSpawnSet.Contains(Coord))
+        {
+            PendingSpawnSet.Remove(Coord);
+            // NOTE :
+            // l'entrée éventuelle encore présente dans PendingSpawnQueue sera ignorée
+            // plus tard dans ProcessSpawnQueue() grâce au test d'existence / set miroir.
+        }
+    }
+}
 
 
