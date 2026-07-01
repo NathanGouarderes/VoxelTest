@@ -46,7 +46,23 @@ public:
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
+    void MarkVisibilityClean();
+	bool ShouldRebuildVisibility() const;
+	bool ResolveVoxelWorldIfNeeded();
+	void RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep);
+	void BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks);
+	void ProcessSpawnQueue();
 
+	TQueue<FIntVector> PendingUnloadQueue;
+	TQueue<FIntVector> PendingSpawnQueue;
+	TSet<FIntVector> PendingSpawnSet;
+	TSet<FIntVector> PendingUnloadSet
+
+	bool bVisibilityInitialized;
+	bool bNeedsInitialBuild;
+    bool bPlayerChangedChunk;
+    bool bStreamingSettingsDirty;
+    bool bForceVisibilityRefresh;
 	TSet<FIntVector> DirtyChuncks;
 	UPROPERTY(EditAnywhere, Category = "Voxel")
 	TSubclassOf<AVoxelChunck> VoxelChunckClass;
