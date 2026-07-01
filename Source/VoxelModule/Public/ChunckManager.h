@@ -58,6 +58,28 @@ public:
 	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
+	    void MarkVisibilityClean();
+
+	bool ShouldRebuildVisibility() const;
+
+	bool ResolveVoxelWorldIfNeeded();
+
+	void RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep);
+
+	void BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks);
+
+	void ProcessSpawnQueue();
+
+	void ProcessGenerationQueue();
+
+    void ProcessGenerationResults();
+
+    void ProcessDirtyChunks();
+
+    void ProcessMeshJobs();
+
+    void ProcessPendingClusters();
+
 
 	// === Cluster volume meshing ===
 	int32 GetNbChunkForLOD(int32 LOD) const;
@@ -70,9 +92,27 @@ public:
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
 	void ProcessPendingClusters();
 
+TQueue<FIntVector> PendingUnloadQueue;
+
+	TQueue<FIntVector> PendingSpawnQueue;
+
+	TSet<FIntVector> PendingSpawnSet;
+
+	TSet<FIntVector> PendingUnloadSet
+
 	TSet<FIntVector> PendingClusterTier1;
 	TSet<FIntVector> PendingClusterTier2;
 	TSet<FIntVector> PendingClusterTier3;
+
+bool bVisibilityInitialized;
+
+	bool bNeedsInitialBuild = true;
+
+    bool bPlayerChangedChunk;
+
+    bool bStreamingSettingsDirty;
+
+    bool bForceVisibilityRefresh;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
 	int32 MaxClusterDispatchPerFrame = 4;
