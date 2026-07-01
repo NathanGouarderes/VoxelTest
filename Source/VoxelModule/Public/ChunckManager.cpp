@@ -1118,3 +1118,54 @@ void AChunckManager::ProcessMeshJobs()
         ChunkToProcess->GenerateAsyncGreedyMesh();
     }
 }
+
+void AChunckManager::ProcessUnloadQueue(TSet<FIntVector>& ChunksToUnload)
+{
+    if(!IsValid(VoxelWorld))
+    {
+        return;
+    }
+    int UnloadCount = 0;
+    int MaxUnloadPerFrame = 10;
+    FIntVector Coord;
+    
+    while(UnloadCount < MaxUnloadPerFrame)
+    {
+        if(!PendingUnloadQueue.Dequeue(Coord))
+        {
+            break;
+        }
+        if(!PendingUnloadSet.Contains(Coord))
+        {
+            continue;
+        }
+        PendingUnloadSet.Remove(Coord);
+        TArray<FIntVector> ToRemove;
+
+    
+        for (auto& Pair : VoxelWorld->Chuncks)
+        {
+            if (!ChunksToUnload.Contains(Pair.Key))
+            {
+                ToRemove.Add(Pair.Key);
+            }
+        }
+    
+        for (const FIntVector& Coord : ToRemove)
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+            FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Coord);
+            if (!Data)
+            {
+                continue;
+            }
+            if (Data->VoxelChunck.IsValid())
+            {
+                Data->VoxelChunck->bIsBeingDestroyed = true;
+                Data->VoxelChunck->Destroy();
+            }
+            VoxelWorld->Chuncks.Remove(Coord);
+        }
+        UnloadCount++;
+    }
+}
