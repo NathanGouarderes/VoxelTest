@@ -698,7 +698,7 @@ void AChunckManager::SpawnChunk(FIntVector Coord, int32 LOD, int32 GenerationId)
         VoxelWorld->Chuncks.Add(Coord, MoveTemp(NewData));
     }
 
-    ChunckGenerationJobQueue.Enqueue(Coord);
+    ChunckGenerationQueue.Enqueue(Coord);
 }
 
 
@@ -1202,7 +1202,7 @@ void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, 
     PMC->CreateMeshSection(0, Mesh.Vertices, Mesh.Triangles, Mesh.Normals,
         Mesh.UVs, TArray<FColor>(), Mesh.Tangents, false);
 }
-
+/*
 void AChunckManager::ProcessPendingClusters()
 {
     if (!VoxelWorld) return;
@@ -1222,6 +1222,7 @@ void AChunckManager::ProcessPendingClusters()
     ProcessTier(PendingClusterTier2, 2);
     ProcessTier(PendingClusterTier3, 3);
 }
+*/
 
 void AChunckManager::GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD)
 {
@@ -1396,7 +1397,7 @@ void AChunckManager::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, i
 
     VertexCount += 4;
 }
-
+/*
 void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 {
     if (!VoxelWorld)
@@ -1477,6 +1478,7 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
         VoxelWorld->Chuncks.Remove(Coord);
     }
 }
+*/
 
 
 bool AChunckManager::ShouldRebuildVisibility() const
