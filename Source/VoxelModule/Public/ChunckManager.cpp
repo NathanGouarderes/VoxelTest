@@ -1119,53 +1119,52 @@ void AChunckManager::ProcessMeshJobs()
     }
 }
 
-void AChunckManager::ProcessUnloadQueue(TSet<FIntVector>& ChunksToUnload)
+void AChunckManager::ProcessUnloadQueue()
 {
-    if(!IsValid(VoxelWorld))
+    if (!IsValid(VoxelWorld)) return;
+
+    const int32 MaxUnloadPerFrame = 10;
+    int32 UnloadedThisFrame = 0;
+
+    while (UnloadedThisFrame < MaxUnloadPerFrame)
     {
-        return;
-    }
-    int UnloadCount = 0;
-    int MaxUnloadPerFrame = 10;
-    FIntVector Coord;
-    
-    while(UnloadCount < MaxUnloadPerFrame)
-    {
-        if(!PendingUnloadQueue.Dequeue(Coord))
+        FIntVector Coord;
+        if (!PendingUnloadQueue.Dequeue(Coord))
         {
-            break;
+            break; // file vide
         }
-        if(!PendingUnloadSet.Contains(Coord))
+
+        // Annulé (redevenu désiré) → on ignore SANS toucher au miroir ni au budget.
+        if (!PendingUnloadSet.Contains(Coord))
         {
             continue;
         }
-        PendingUnloadSet.Remove(Coord);
-        TArray<FIntVector> ToRemove;
 
-    
-        for (auto& Pair : VoxelWorld->Chuncks)
+        // Consommé : le miroir suit la file, INCONDITIONNELLEMENT.
+        PendingUnloadSet.Remove(Coord);
+
+        bool bDestroyed = false;
         {
-            if (!ChunksToUnload.Contains(Pair.Key))
-            {
-                ToRemove.Add(Pair.Key);
-            }
-        }
-    
-        for (const FIntVector& Coord : ToRemove)
-        {
-            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);   // lock AVANT le premier Find
+
             FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Coord);
-            if (!Data)
+            if (Data)
             {
-                continue;
+                if (Data->VoxelChunck.IsValid())
+                {
+                    Data->VoxelChunck->bIsBeingDestroyed = true;
+                    Data->VoxelChunck->Destroy();
+                }
+                VoxelWorld->Chuncks.Remove(Coord);
+                bDestroyed = true;
             }
-            if (Data->VoxelChunck.IsValid())
-            {
-                Data->VoxelChunck->bIsBeingDestroyed = true;
-                Data->VoxelChunck->Destroy();
-            }
-            VoxelWorld->Chuncks.Remove(Coord);
         }
-        UnloadCount++;
+
+        if (bDestroyed)
+        {
+            ++UnloadedThisFrame; // budget = travail réel
+        }
     }
 }
+
+
