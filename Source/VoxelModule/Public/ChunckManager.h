@@ -52,6 +52,11 @@ public:
 	void RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep);
 	void BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks);
 	void ProcessSpawnQueue();
+	void ProcessGenerationQueue();
+    void ProcessGenerationResults();
+    void ProcessDirtyChunks();
+    void ProcessMeshJobs();
+    void ProcessPendingClusters();
 
 	TQueue<FIntVector> PendingUnloadQueue;
 	TQueue<FIntVector> PendingSpawnQueue;
