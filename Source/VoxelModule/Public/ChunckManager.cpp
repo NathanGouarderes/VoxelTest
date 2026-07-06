@@ -107,11 +107,26 @@ void AChunckManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AChunckManager::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-
+    ResolveVoxelWorldIfNeeded();
+    UpdatePlayerChunkState();
+    TSet<FIntVector> OutChunksToKeep;
+    if (ShouldRebuildVisibility())
+    {
+        RebuildDesiredChunkSet(OutChunksToKeep);
+        BuildStreamingQueues(OutChunksToKeep);
+        MarkVisibilityClean();
+    }
+    ProcessSpawnQueue();
+    ProcessGenerationQueue();
+    ProcessGenerationResults();
+    ProcessDirtyChunks();
+    ProcessMeshJobs();
+    ProcessPendingClusters();
+    ProcessUnloadQueue();
     // ===================================================================
     // 1. Mise à jour visibilité (lourde) → throttle 0.2s
     // ==================================================================
-    
+    /*
     if (!VoxelWorld)
     {
         TArray<AActor*> ActorsFound;
@@ -247,13 +262,13 @@ void AChunckManager::Tick(float DeltaTime)
                     //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::Tick(float DeltaTime) --> Coordonnées %d, %d %d ont été enque dans PendingMeshToApply"), NeighborCoord.X, NeighborCoord.Y, NeighborCoord.Z);
                 }
             }
-            */
+            
 
         }
         Count++;
         
     }
-    /*
+    
     FClusterGenResult ClusterResult;
     TArray<FIntVector> CoordList;
    
@@ -315,7 +330,7 @@ void AChunckManager::Tick(float DeltaTime)
         }
     }
 
-    */
+    
 
 
     APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
@@ -381,7 +396,18 @@ void AChunckManager::Tick(float DeltaTime)
     }
 
     ProcessPendingClusters();
-    
+    */
+}
+
+void AChunckManager::MarkVisibilityClean()
+{
+    bNeedsInitialBuild = false;
+
+    bPlayerChangedChunk = false;
+
+    bStreamingSettingsDirty = false;
+
+    bForceVisibilityRefresh = false;
 }
 
 int32 AChunckManager::GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const
@@ -963,10 +989,12 @@ bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
         FMath::FloorToInt((float)GZ / ChunkSize));
     const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
     if (!D || D->Voxels.Num() == 0) return false;
-    const int32 lx = GX - CC.X * ChunkSize;
-    const int32 ly = GY - CC.Y * ChunkSize;
-    const int32 lz = GZ - CC.Z * ChunkSize;
-    const int32 idx = lx + ly * ChunkSize + lz * ChunkSize * ChunkSize;
+
+    const int32 SubSize = ChunkSize >> D->LOD;
+    const int32 lx = (GX - CC.X * ChunkSize) >> D->LOD;
+    const int32 ly = (GY - CC.Y * ChunkSize) >> D->LOD;
+    const int32 lz = (GZ - CC.Z * ChunkSize) >> D->LOD;
+    const int32 idx = lx + ly * SubSize + lz * SubSize * SubSize;
     if (!D->Voxels.IsValidIndex(idx)) return false;
     return D->Voxels[idx].Material.Id > 0;
 }
@@ -978,12 +1006,13 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
     if (!VoxelWorld) return false;
 
     const int32 NbChunk = GetNbChunkForLOD(LOD);
-    const int32 Step = 1 << LOD;
+    const int32 StepCluster = 1 << LOD;          // pas d'échantillonnage du cluster (espace-MONDE)
+    const int32 SubSize = ChunkSize >> LOD;  // cellules/axe/chunk, à la résolution du cluster
     const FIntVector ChunkOrigin(ClusterCoord.X * NbChunk, ClusterCoord.Y * NbChunk, ClusterCoord.Z);
 
     FScopeLock Lock(&VoxelWorld->ChunckMutex);
 
-    // 1) Readiness : tous les chunks de l'empreinte générés ET LOD >= 1 (on exclut le LOD0)
+    // 1) Readiness : tous les chunks de l'empreinte générés ET LOD >= 1 (LOD0 = chemin acteur séparé)
     for (int32 cx = 0; cx < NbChunk; ++cx)
         for (int32 cy = 0; cy < NbChunk; ++cy)
         {
@@ -993,18 +1022,18 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
                 return false;
         }
 
-    // 2) Dimensions sous-échantillonnées (LOD3 : buffer minuscule, ton PC tient)
-    OutSX = (NbChunk * ChunkSize) / Step;
-    OutSY = (NbChunk * ChunkSize) / Step;
-    OutSZ = ChunkSize / Step;
-
+    // 2) Dimensions du volume, à la résolution du cluster (+2 pour le padding)
+    OutSX = NbChunk * SubSize;
+    OutSY = NbChunk * SubSize;
+    OutSZ = SubSize;
     const int32 PX = OutSX + 2, PY = OutSY + 2, PZ = OutSZ + 2;
     OutVolume.Reset();
     OutVolume.SetNumZeroed(PX * PY * PZ);
 
-    const int32 ChunkCells = ChunkSize / Step;
-
-    // 3) Intérieur, chunk par chunk (NbChunk^2 Find seulement)
+    // 3) Intérieur, chunk par chunk (NbChunk^2 Find seulement).
+    //    Chaque chunk est lu À SA PROPRE résolution D->LOD. Si elle égale celle du cluster,
+    //    la conversion se réduit à une lecture 1:1 ; sinon elle ré-échantillonne proprement
+    //    (grilles imbriquées, puissances de 2) => jamais de lecture hors-grille.
     for (int32 cx = 0; cx < NbChunk; ++cx)
         for (int32 cy = 0; cy < NbChunk; ++cy)
         {
@@ -1012,25 +1041,35 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
             const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
             if (!D) continue;
 
-            const int32 baseDX = cx * ChunkCells;
-            const int32 baseDY = cy * ChunkCells;
+            const int32 SubSizeD = ChunkSize >> D->LOD;   // taille RÉELLE stockée de CE chunk
+            const int32 baseDX = cx * SubSize;
+            const int32 baseDY = cy * SubSize;
 
-            for (int32 lz = 0; lz < ChunkCells; ++lz)
-                for (int32 ly = 0; ly < ChunkCells; ++ly)
-                    for (int32 lx = 0; lx < ChunkCells; ++lx)
+            for (int32 lz = 0; lz < SubSize; ++lz)
+                for (int32 ly = 0; ly < SubSize; ++ly)
+                    for (int32 lx = 0; lx < SubSize; ++lx)
                     {
-                        const int32 vidx = (lx * Step) + (ly * Step) * ChunkSize + (lz * Step) * ChunkSize * ChunkSize;
-                        if (!D->Voxels.IsValidIndex(vidx) || D->Voxels[vidx].Material.Id == 0) continue;
+                        // décalage-monde de la cellule dans le chunk, sur la grille du cluster
+                        const int32 ox = lx * StepCluster;   // 0..ChunkSize-1
+                        const int32 oy = ly * StepCluster;
+                        const int32 oz = lz * StepCluster;
+                        // index dans le tableau du chunk, snappé à SA grille (>> D->LOD)
+                        const int32 vidx = (ox >> D->LOD)
+                            + (oy >> D->LOD) * SubSizeD
+                            + (oz >> D->LOD) * SubSizeD * SubSizeD;
+                        if (!D->Voxels.IsValidIndex(vidx) || D->Voxels[vidx].Material.Id == 0)
+                            continue;
 
-                        const int32 px = (baseDX + lx) + 1;
-                        const int32 py = (baseDY + ly) + 1;
+                        const int32 px = baseDX + lx + 1;
+                        const int32 py = baseDY + ly + 1;
                         const int32 pz = lz + 1;
                         OutVolume[px + py * PX + pz * PX * PY].Material.Id = 1;
                     }
         }
 
-    // 4) Bords (padding) par échantillonnage global -> pas de seams entre clusters
-    const int32 BaseGX = ChunkOrigin.X * ChunkSize;
+    // 4) Bords (padding) : échantillonnage global aux frontières -> raccord sans seam.
+    //    SampleGlobalVoxelSolidNoLock lit chaque voisin à SON propre LOD (déjà corrigé).
+    const int32 BaseGX = ChunkOrigin.X * ChunkSize;   // géométrie-monde : PAS divisé par Step
     const int32 BaseGY = ChunkOrigin.Y * ChunkSize;
     const int32 BaseGZ = ChunkOrigin.Z * ChunkSize;
 
@@ -1040,9 +1079,9 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
             {
                 if (px != 0 && px != PX - 1 && py != 0 && py != PY - 1 && pz != 0 && pz != PZ - 1)
                     continue;
-                const int32 GX = BaseGX + (px - 1) * Step;
-                const int32 GY = BaseGY + (py - 1) * Step;
-                const int32 GZ = BaseGZ + (pz - 1) * Step;
+                const int32 GX = BaseGX + (px - 1) * StepCluster;
+                const int32 GY = BaseGY + (py - 1) * StepCluster;
+                const int32 GZ = BaseGZ + (pz - 1) * StepCluster;
                 if (SampleGlobalVoxelSolidNoLock(GX, GY, GZ))
                     OutVolume[px + py * PX + pz * PX * PY].Material.Id = 1;
             }

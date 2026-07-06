@@ -42,30 +42,34 @@ uint32 ChunckGenWorker::Run()
 		}
 
 		const int32 ChunckSize = Job.ChunkSize;
-		const int32 TotalSize = ChunckSize * ChunckSize * ChunckSize;
+		const int32 SubSize = ChunckSize >> Job.LOD;
+		const int32 Step = 1 << Job.LOD;
+		const int32 TotalSize = SubSize * SubSize * SubSize;
 
 		TArray<FVoxelDataStructure> LocalVoxel;
 		LocalVoxel.SetNumZeroed(TotalSize);
+		bool bIsAllSolid = true;
+		bool bIsAllEmpty = true;
 
-		for (int x = 0; x < ChunckSize; x++)
+		for (int x = 0; x < SubSize; x++)
 		{
-			for (int y = 0; y < ChunckSize; y++)
+			for (int y = 0; y < SubSize; y++)
 			{
-				float WorldX = (Job.Coord.X * ChunckSize + x) * Job.SurfaceFrequency;
-				float WorldY = (Job.Coord.Y * ChunckSize + y) * Job.SurfaceFrequency;
+				float WorldX = (Job.Coord.X * ChunckSize + x * Step) * Job.SurfaceFrequency;
+				float WorldY = (Job.Coord.Y * ChunckSize + y * Step) * Job.SurfaceFrequency;
 
 				float SurfaceNoiseValue = Job.SurfaceNoise.GetNoise(WorldX, WorldY);
 				int GlobalSurfaceHeigh = Job.BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * Job.SurfaceAmplitude);
 
-				for (int z = 0; z < ChunckSize; z++)
+				for (int z = 0; z < SubSize; z++)
 				{
-					int Index = x + y * ChunckSize + z * ChunckSize * ChunckSize;
-					int GlobalZ = Job.Coord.Z * ChunckSize + z;
+					int Index = x + y * SubSize + z * SubSize * SubSize;
+					int GlobalZ = Job.Coord.Z * ChunckSize + z * Step;
 
 					bool IsSolid = (GlobalZ < GlobalSurfaceHeigh);
 					if (IsSolid)
 					{
-						float CaveNoiseValue = Job.CaveNoise.GetNoise((Job.Coord.X * ChunckSize + x) * Job.CaveFrequency, (Job.Coord.Y * ChunckSize + y) * Job.CaveFrequency, GlobalZ * Job.CaveFrequency);
+						float CaveNoiseValue = Job.CaveNoise.GetNoise((Job.Coord.X * ChunckSize + x * Step) * Job.CaveFrequency, (Job.Coord.Y * ChunckSize + y * Step) * Job.CaveFrequency, GlobalZ * Job.CaveFrequency);
 
 						if (CaveNoiseValue > Job.CaveThreshold)
 						{
@@ -73,23 +77,19 @@ uint32 ChunckGenWorker::Run()
 						}
 					}
 					LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
+					if (IsSolid)
+					{
+						bIsAllEmpty = false;
+					}
+					else
+					{
+						bIsAllSolid = false;
+					}
+
 				}
 			}
 		}
-		bool bIsAllSolid = true;
-		bool bIsAllEmpty = true;
 
-		for (FVoxelDataStructure Voxel : LocalVoxel)
-		{
-			if (Voxel.Material.Id == 0)
-			{
-				bIsAllSolid = false;
-			}
-			else
-			{
-				bIsAllEmpty = false;
-			}
-		}
 		if (ChunckManager)
 		{
 			FChunkGenResult Result;

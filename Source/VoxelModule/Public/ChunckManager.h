@@ -69,7 +69,7 @@ public:
     void ProcessDirtyChunks();
     void ProcessMeshJobs();
     void ProcessPendingClusters();
-	void ProcessUnloadQueue()
+	void ProcessUnloadQueue();
 	bool UpdatePlayerChunkState();
 
 
@@ -96,7 +96,7 @@ TQueue<FIntVector> PendingUnloadQueue;
 	TSet<FIntVector> PendingClusterTier2;
 	TSet<FIntVector> PendingClusterTier3;
 
-bool bVisibilityInitialized;
+	bool bVisibilityInitialized;
 
 	bool bNeedsInitialBuild = true;
 
@@ -127,7 +127,7 @@ bool bVisibilityInitialized;
 	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 1000.0f, 8000.0f, 16000.0f, 32000.0f };
+	TArray<float> LODDistances = { 3000.0f, 8000.0f, 16000.0f, 32000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
