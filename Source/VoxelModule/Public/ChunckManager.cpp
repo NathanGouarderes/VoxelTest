@@ -699,7 +699,8 @@ void AChunckManager::SpawnChunk(FIntVector Coord, int32 LOD, int32 GenerationId)
 
     FVector Location = FVector(Coord) * ChunkSize * VoxelSize;
     FChunckDataStructure NewData;
-    NewData.Voxels.SetNum(ChunkSize * ChunkSize * ChunkSize);
+    int32 SubSize = ChunkSize >> LOD;
+    NewData.Voxels.SetNum(SubSize * SubSize * SubSize);
 
     if (LOD == 0)
     {
