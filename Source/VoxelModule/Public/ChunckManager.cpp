@@ -9,6 +9,7 @@
 #include "FChunkGenResult.h"
 #include "ChunckGenWorker.h"
 #include "VoxelWorld.h"
+#include "StaticMeshAttributes.h"
 
 // Sets default values
 AChunckManager::AChunckManager():
@@ -26,7 +27,7 @@ AChunckManager::AChunckManager():
     bNeedUpdate = false;
     MaxMeshJob = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
     CurrentMeshJob = 0;
-    ChunkSize = 32;
+    ChunkSize = 128;
     VoxelSize = 10.0f;
 }
 
@@ -41,8 +42,9 @@ void AChunckManager::BeginPlay()
     //ClusterProceduralMeshComponent->SetWorldLocation(ClusterWorldPos);
 
     NumThreads = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
-    MaxMeshJob = FMath::Clamp(NumThreads - 2, 2, 14);
-    MaxGenPerFrame = FMath::Clamp(NumThreads / 2, 2, 8);
+    MaxClusterMeshJob = FMath::Max(2, MaxMeshJob / 4);   // budget réservé aux clusters
+    MaxMeshJob = FMath::Max(2, MaxMeshJob - MaxClusterMeshJob);
+    MaxGenPerFrame = FMath::Clamp(NumThreads * 8, 64, 100000);
 
     FTimerHandle Timer;
     GetWorld()->GetTimerManager().SetTimer(Timer, [this]()
@@ -109,13 +111,14 @@ void AChunckManager::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
     ResolveVoxelWorldIfNeeded();
     UpdatePlayerChunkState();
-    TSet<FIntVector> OutChunksToKeep;
+    TMap<FIntVector, int32> OutChunksToKeep;
     if (ShouldRebuildVisibility())
     {
         RebuildDesiredChunkSet(OutChunksToKeep);
         BuildStreamingQueues(OutChunksToKeep);
         MarkVisibilityClean();
     }
+    ProcessTransitionQueue();
     ProcessSpawnQueue();
     ProcessGenerationQueue();
     ProcessGenerationResults();
@@ -123,280 +126,6 @@ void AChunckManager::Tick(float DeltaTime)
     ProcessMeshJobs();
     ProcessPendingClusters();
     ProcessUnloadQueue();
-    // ===================================================================
-    // 1. Mise à jour visibilité (lourde) → throttle 0.2s
-    // ==================================================================
-    /*
-    if (!VoxelWorld)
-    {
-        TArray<AActor*> ActorsFound;
-        UGameplayStatics::GetAllActorsOfClass(GetWorld(), AVoxelWorld::StaticClass(), ActorsFound);
-        if (ActorsFound.Num() > 0)
-        {
-            VoxelWorld = Cast<AVoxelWorld>(ActorsFound[0]);
-        }
-
-        if (!VoxelWorld)
-        {
-            return;
-        }
-    }  
-    
-
-    bool bDoVisibilityUpdate = (GetWorld()->GetTimeSeconds() - LastUpdateTime >= 0.2f);
-    
-
-    // ===================================================================
-    // 2. Mise à jour des chunks visibles (spawn / unload)
-    // ===================================================================
-    bNeedUpdate = false;
-    TSet<FIntVector> GlobalChunksToKeep;
-    GetAllPlayerChunks(GlobalChunksToKeep);
-
-    if (bDoVisibilityUpdate && (bNeedUpdate || VoxelWorld->Chuncks.Num() < GlobalChunksToKeep.Num()))
-    {
-        UpdateVisibleChunks(GlobalChunksToKeep);
-        LastUpdateTime = GetWorld()->GetTimeSeconds();
-    }
-    for (int i = 0; i < MaxGenPerFrame; i++)
-    {
-        {
-            FScopeLock Lock(&VoxelWorld->ChunckMutex);
-            FIntVector Coord;
-            
-            if (!ChunckGenerationQueue.Dequeue(Coord))
-            {
-                break;
-            }
-            int32 ChunkLOD = 0;
-            if (FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Coord))
-            {
-                ChunkLOD = Data->LOD;
-                FillChunck(EChunkVariant::Full, Coord, ChunkLOD);
-            }
-        }
-
-    }
-
-    // ===================================================================
-    // 3. TRAITEMENT DES DIRTY CHUNKS → triés par distance (near → far)
-    // ===================================================================
-
-    FChunkGenResult Result;
-
-    int32 MaxApply = 30;
-    int32 Count = 0;
-
-    while (Count < MaxApply && ChunckGenerationResult.Dequeue(Result))
-    {
-        if (!VoxelWorld) continue;
-        {
-            FScopeLock Lock(&VoxelWorld->ChunckMutex);
-            FChunckDataStructure* ChunckData = VoxelWorld->Chuncks.Find(Result.Coord);
-            if (!ChunckData) continue;
-
-            const FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
-            ChunckData->Voxels = MoveTemp(Result.Voxels);
-            ChunckData->bIsChunckGenerated = true;
-            if (Result.LOD == 0)
-            {
-                //UE_LOG(LogTemp, Warning, TEXT("LOD = 0"));
-                AVoxelChunck* VoxelChunck = ChunckData->VoxelChunck.Get();
-                if (!IsValid(VoxelChunck))
-                {
-                    //continue;
-                }
-
-                if (!Result.bIsAllEmpty)
-                {
-                    DirtyChuncks.Add(Result.Coord);
-                }
-                for (const FIntVector& Dir : Dirs)
-                {
-                    FIntVector NeighborCoord = Result.Coord + Dir;
-                    if (VoxelWorld->Chuncks.Contains(NeighborCoord))
-                        DirtyChuncks.Add(NeighborCoord);
-                }
-            }
-            else
-            {
-                FIntVector ClusterCoord = GetClusterCoord(Result.Coord, Result.LOD);
-                if (Result.LOD == 1) PendingClusterTier1.Add(ClusterCoord);
-                else if (Result.LOD == 2) PendingClusterTier2.Add(ClusterCoord);
-                else if (Result.LOD == 3) PendingClusterTier3.Add(ClusterCoord);
-            }
-            
-            /*
-            // === PARTIE 2 : ce chunk débloque-t-il des voisins en attente ? ===
-            // Ce chunk vient d'être prêt — il était peut-être le dernier voisin
-            // manquant pour un chunk qui attendait dans PendingLODMesh.
-            for (const FIntVector& Dir : Dirs)
-            {
-                FIntVector NeighborCoord = Result.Coord + Dir;
-                if (!PendingLODMesh.Contains(NeighborCoord))
-                    continue;
-
-                // Ce voisin attendait. On re-vérifie SES propres 6 voisins.
-                // Variable séparée : indépendante de bAllNeighborsReady.
-                bool bNeighborNowReady = true;
-                for (const FIntVector& Dir2 : Dirs)
-                {
-                    FIntVector NeighborOfNeighbor = NeighborCoord + Dir2;
-                    FChunckDataStructure* NON = VoxelWorld->Chuncks.Find(NeighborOfNeighbor);
-                    if (!NON || !NON->bIsChunckGenerated)
-                    {
-                        bNeighborNowReady = false;
-                        break;
-                    }
-                }
-
-                if (bNeighborNowReady)
-                {
-                    PendingLODMesh.Remove(NeighborCoord);
-                    FChunckDataStructure* NeighboorData = VoxelWorld->Chuncks.Find(NeighborCoord);
-                    if (NeighboorData->bIsQueued == false)
-                    {
-                        NeighboorData->bIsQueued = true;
-                        PendingMeshToApply.Enqueue(NeighborCoord);
-                    }
-                    //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::Tick(float DeltaTime) --> Coordonnées %d, %d %d ont été enque dans PendingMeshToApply"), NeighborCoord.X, NeighborCoord.Y, NeighborCoord.Z);
-                }
-            }
-            
-
-        }
-        Count++;
-        
-    }
-    
-    FClusterGenResult ClusterResult;
-    TArray<FIntVector> CoordList;
-   
-    while (ClusterGenerationResult.Dequeue(ClusterResult))
-    {
-        FIntVector ClusterCoord = GetClusterCoord(ClusterResult.MeshData.ChunckCoord, ClusterResult.LOD);
-        switch (ClusterResult.LOD)
-        {
-        case 1:
-        {
-            TArray<FChunckMeshData>& ClusterArray = ClusterMapTier1.FindOrAdd(ClusterCoord);
-
-            // Vérification doublon AVANT l'ajout, dans le bon cluster
-            bool bAlreadyPresent = false;
-            for (const FChunckMeshData& Existing : ClusterArray)
-            {
-                if (Existing.ChunckCoord == ClusterResult.MeshData.ChunckCoord)
-                {
-                    bAlreadyPresent = true;
-                    UE_LOG(LogTemp, Warning, TEXT("Doublon dans cluster (%d,%d,%d) : chunk (%d,%d,%d)"),
-                        ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z,
-                        ClusterResult.MeshData.ChunckCoord.X,
-                        ClusterResult.MeshData.ChunckCoord.Y,
-                        ClusterResult.MeshData.ChunckCoord.Z);
-                    break;
-                }
-            }
-
-            if (!bAlreadyPresent)
-            {
-                ClusterArray.Add(ClusterResult.MeshData);
-            }
-
-            if (ClusterArray.Num() >= 16)
-            {
-                ApplyMeshToCluster(ClusterArray, ClusterPoolTier1, ClusterCoord, ClusterResult.LOD);
-                ClusterMapTier1.Remove(ClusterCoord);
-            }
-            break;
-        }
-        case 2:
-            ClusterMapTier2.FindOrAdd(ClusterCoord).Add(ClusterResult.MeshData);
-            if (ClusterMapTier2[ClusterCoord].Num() == 25) //6
-            {
-                ApplyMeshToCluster(ClusterMapTier2[ClusterCoord], ClusterPoolTier2, ClusterCoord, ClusterResult.LOD);
-                ClusterMapTier2.Remove(ClusterCoord);
-            }
-            break;
-        case 3:
-            ClusterMapTier3.FindOrAdd(ClusterCoord).Add(ClusterResult.MeshData);
-            if (ClusterMapTier3[ClusterCoord].Num() == 1024)
-            {
-                ApplyMeshToCluster(ClusterMapTier3[ClusterCoord], ClusterPoolTier3, ClusterCoord, ClusterResult.LOD);
-                ClusterMapTier3.Remove(ClusterCoord);
-            }
-            break;
-        default:
-            break;
-        }
-    }
-
-    
-
-
-    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
-    if (Pawn && VoxelWorld)
-    {
-        FVector PlayerPos = Pawn->GetActorLocation();
-        int32 RebuildCount = 0;
-
-        TArray<FIntVector> DirtyToProcess = DirtyChuncks.Array();
-
-        DirtyToProcess.Sort([&](const FIntVector& A, const FIntVector& B)
-            {
-                FVector PosA = FVector(A) * ChunkSize * VoxelSize;
-                FVector PosB = FVector(B) * ChunkSize * VoxelSize;
-                return FVector::DistSquared(PlayerPos, PosA) < FVector::DistSquared(PlayerPos, PosB);
-            });
-
-        for (const FIntVector& Coord : DirtyToProcess)
-        {
-            DesiredLOD = GetLODForChunck(Coord, PlayerPos);
-            if (RebuildCount >= MaxRebuildPerFrame)
-                break;
-
-            if (!DirtyChuncks.Contains(Coord))
-                continue;
-            {
-                FScopeLock Lock(&VoxelWorld->ChunckMutex);
-                FChunckDataStructure* Chunck = VoxelWorld->Chuncks.Find(Coord);
-                if (!Chunck || !Chunck->bIsChunckGenerated)
-                    continue;
-
-                AVoxelChunck* VoxelChunck = Chunck->VoxelChunck.Get();
-                if (!IsValid(VoxelChunck))
-                    continue;
-                VoxelChunck->CurrentLOD = DesiredLOD;
-                if (Chunck->bIsQueued == false)
-                {
-                    Chunck->bIsQueued = true;
-                    PendingMeshToApply.Enqueue(VoxelChunck->Coord);
-                }
-                
-            }
-            DirtyChuncks.Remove(Coord);
-            RebuildCount++;
-        }
-    }
-    while (CurrentMeshJob < MaxMeshJob && !PendingMeshToApply.IsEmpty())
-    {
-        FIntVector Coord;
-        if (!PendingMeshToApply.Dequeue(Coord))
-            break;
-
-        if (Coord.IsZero())
-            continue;
-
-        UE_LOG(LogTemp, Warning,
-            TEXT("START MESH JOB : (%d,%d,%d)"),
-            Coord.X,
-            Coord.Y,
-            Coord.Z);
-        CurrentMeshJob++;
-        GenerateAsyncGreedyMesh(Coord);
-    }
-
-    ProcessPendingClusters();
-    */
 }
 
 void AChunckManager::MarkVisibilityClean()
@@ -554,13 +283,13 @@ void AChunckManager::InitNoise()
 
 
 
-void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD)
+void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD, int32 GenerationId)
 {
     
     //if (!ChunckData) return;
     int32 TotalSize = ChunkSize * ChunkSize * ChunkSize;
 
-    ChunckGenerationJobQueue.Enqueue(FChunkGenJob(Coord, Variant, this, LOD));
+    ChunckGenerationJobQueue.Enqueue(FChunkGenJob(Coord, Variant, this, LOD, GenerationId));
 }
 
 FIntVector AChunckManager::GetClusterCoord(FIntVector Coord, int LOD)
@@ -724,11 +453,11 @@ void AChunckManager::SpawnChunk(FIntVector Coord, int32 LOD, int32 GenerationId)
         NewData.LOD = LOD;
         VoxelWorld->Chuncks.Add(Coord, MoveTemp(NewData));
     }
-
+    //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::SpawnChunk --> ChunkLOD pour (%d, %d, %d) : %d"), NewData.Coord.X, NewData.Coord.Y, NewData.Coord.Z, LOD);
     ChunckGenerationQueue.Enqueue(Coord);
 }
 
-
+/*
 int32 AChunckManager::CalculChunkLODBeforeSpawn(FIntVector Coord)
 {
     APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
@@ -755,9 +484,9 @@ int32 AChunckManager::CalculChunkLODBeforeSpawn(FIntVector Coord)
     }
     return ChunkLOD;
 }
+*/
 
-
-void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
+/*void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 {
     if (!VoxelWorld)
     {
@@ -785,7 +514,7 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 
     for (const FIntVector& Coord : SortedChunks)
     {
-        int32 ChunkLOD = CalculChunkLODBeforeSpawn(Coord);
+        int32 ChunkLOD = GetLODForChunck(Coord, PlayerPos);
 
         if (VoxelWorld->Chuncks.Contains(Coord))
         {
@@ -845,7 +574,7 @@ void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
         }
         VoxelWorld->Chuncks.Remove(Coord);
     }
-}
+}*/
 
 void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
 {
@@ -875,6 +604,7 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
     
     int32 CapturedGenerationId = ChunkData->GenerationId;
     int32 LOD = ChunkData->LOD;
+    const int32 SubSize = ChunkSize >> LOD;
     AVoxelChunck* VoxelChunk = (ChunkData->LOD == 0) ? ChunkData->VoxelChunck.Get() : nullptr;
     if (ChunkData->LOD == 0 && (!IsValid(VoxelChunk) || VoxelChunk->bIsBeingDestroyed))
     {
@@ -884,17 +614,26 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
 
     }
 
+    if (ChunkData->Voxels.Num() != SubSize * SubSize * SubSize)
+    {
+        UE_LOG(LogTemp, Error, TEXT("GenerateAsyncGreedyMesh --> (%d,%d,%d) LOD %d : Voxels.Num()=%d, attendu %d"),
+            Coord.X, Coord.Y, Coord.Z, LOD, ChunkData->Voxels.Num(), SubSize * SubSize * SubSize);
+        CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
+        if (VoxelChunk) VoxelChunk->bIsQueued = false;
+        return;
+    }
+
     // On capture les données nécessaires
-    const int32 PaddedSize = ChunkSize + 2;
+    const int32 PaddedSize = SubSize + 2;
     TArray<FVoxelDataStructure> PaddedVoxels;
     PaddedVoxels.SetNum(PaddedSize * PaddedSize * PaddedSize);
 
     // Remplissage du padded (copie du chunk + voisins)
-    for (int z = 0; z < ChunkSize; ++z)
-        for (int y = 0; y < ChunkSize; ++y)
-            for (int x = 0; x < ChunkSize; ++x)
+    for (int z = 0; z < SubSize; ++z)
+        for (int y = 0; y < SubSize; ++y)
+            for (int x = 0; x < SubSize; ++x)
             {
-                int srcIdx = x + y * ChunkSize + z * ChunkSize * ChunkSize;
+                int srcIdx = x + y * SubSize + z * SubSize * SubSize;
                 int dstIdx = (x + 1) + (y + 1) * PaddedSize + (z + 1) * PaddedSize * PaddedSize;
                 PaddedVoxels[dstIdx] = ChunkData->Voxels[srcIdx];
             }
@@ -907,19 +646,19 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
         if (!Neighbor || Neighbor->Voxels.Num() == 0)
             continue;
 
-        for (int a = 0; a < ChunkSize; ++a)
+        for (int a = 0; a < SubSize; ++a)
         {
-            for (int b = 0; b < ChunkSize; ++b)
+            for (int b = 0; b < SubSize; ++b)
             {
-                int nx = (Dir.X == -1) ? (ChunkSize - 1) : (Dir.X == 1) ? 0 : a;
-                int ny = (Dir.Y == -1) ? (ChunkSize - 1) : (Dir.Y == 1) ? 0 : (Dir.X != 0) ? a : b;
-                int nz = (Dir.Z == -1) ? (ChunkSize - 1) : (Dir.Z == 1) ? 0 : (Dir.X != 0) ? b : (Dir.Y != 0) ? b : 0;
+                int nx = (Dir.X == -1) ? (SubSize - 1) : (Dir.X == 1) ? 0 : a;
+                int ny = (Dir.Y == -1) ? (SubSize - 1) : (Dir.Y == 1) ? 0 : (Dir.X != 0) ? a : b;
+                int nz = (Dir.Z == -1) ? (SubSize - 1) : (Dir.Z == 1) ? 0 : (Dir.X != 0) ? b : (Dir.Y != 0) ? b : 0;
 
                 int px = (Dir.X == -1) ? 0 : (Dir.X == 1) ? PaddedSize - 1 : a + 1;
                 int py = (Dir.Y == -1) ? 0 : (Dir.Y == 1) ? PaddedSize - 1 : (Dir.X != 0) ? a + 1 : b + 1;
                 int pz = (Dir.Z == -1) ? 0 : (Dir.Z == 1) ? PaddedSize - 1 : (Dir.X != 0) ? b + 1 : (Dir.Y != 0) ? b + 1 : 1;
 
-                int srcIdx = nx + ny * ChunkSize + nz * ChunkSize * ChunkSize;
+                int srcIdx = nx + ny * SubSize + nz * SubSize * SubSize;
                 int dstIdx = px + py * PaddedSize + pz * PaddedSize * PaddedSize;
 
                 if (Neighbor->Voxels.IsValidIndex(srcIdx))
@@ -1002,24 +741,27 @@ bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
 
 // Construit le volume sous-échantillonné + padding. Renvoie false si le cluster n'est pas prêt.
 bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
-    TArray<FVoxelDataStructure>& OutVolume, int32& OutSX, int32& OutSY, int32& OutSZ)
+    TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ)
 {
     if (!VoxelWorld) return false;
 
-    const int32 NbChunk = GetNbChunkForLOD(LOD);
+    const int32 NbChunk = GetNbChunkForLOD(LOD) / 3;
     const int32 StepCluster = 1 << LOD;          // pas d'échantillonnage du cluster (espace-MONDE)
-    const int32 SubSize = ChunkSize >> LOD;  // cellules/axe/chunk, à la résolution du cluster
+    const int32 SubSize = ChunkSize >> LOD;      // cellules/axe/chunk, à la résolution du cluster
     const FIntVector ChunkOrigin(ClusterCoord.X * NbChunk, ClusterCoord.Y * NbChunk, ClusterCoord.Z);
 
     FScopeLock Lock(&VoxelWorld->ChunckMutex);
 
-    // 1) Readiness : tous les chunks de l'empreinte générés ET LOD >= 1 (LOD0 = chemin acteur séparé)
+    // 1) Readiness : un chunk PRÉSENT mais pas encore généré => on attend, il arrive.
+    //    Un chunk ABSENT n'est PAS attendu : hors du disque de vision (empreinte carrée
+    //    vs disque), culled par IsChunkGuaranteedEmpty, ou déchargé. Il ne viendra jamais.
+    //    Exiger sa présence bloquait le cluster À VIE (pending qui monte, dispatches=0).
     for (int32 cx = 0; cx < NbChunk; ++cx)
         for (int32 cy = 0; cy < NbChunk; ++cy)
         {
             const FIntVector CC(ChunkOrigin.X + cx, ChunkOrigin.Y + cy, ChunkOrigin.Z);
             const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
-            if (!D || !D->bIsChunckGenerated || D->LOD < 1)
+            if (D && D->LOD == LOD && !D->bIsChunckGenerated)
                 return false;
         }
 
@@ -1030,21 +772,31 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
     const int32 PX = OutSX + 2, PY = OutSY + 2, PZ = OutSZ + 2;
     OutVolume.Reset();
     OutVolume.SetNumZeroed(PX * PY * PZ);
+    OutMask.Reset();
+    OutMask.SetNumZeroed(PX * PY * PZ);
 
-    // 3) Intérieur, chunk par chunk (NbChunk^2 Find seulement).
-    //    Chaque chunk est lu À SA PROPRE résolution D->LOD. Si elle égale celle du cluster,
-    //    la conversion se réduit à une lecture 1:1 ; sinon elle ré-échantillonne proprement
-    //    (grilles imbriquées, puissances de 2) => jamais de lecture hors-grille.
+
+    // 3) Intérieur, chunk par chunk. Un chunk d'un autre LOD (ou absent) est EXCLU :
+    //    sa géométrie est rendue ailleurs (acteur LOD0 ou cluster d'un autre tier).
+    int32 IncludedChunks = 0;
     for (int32 cx = 0; cx < NbChunk; ++cx)
         for (int32 cy = 0; cy < NbChunk; ++cy)
         {
             const FIntVector CC(ChunkOrigin.X + cx, ChunkOrigin.Y + cy, ChunkOrigin.Z);
             const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
-            if (!D) continue;
-
-            const int32 SubSizeD = ChunkSize >> D->LOD;   // taille RÉELLE stockée de CE chunk
             const int32 baseDX = cx * SubSize;
             const int32 baseDY = cy * SubSize;
+            if (!D || D->LOD != LOD)
+            {
+                for (int32 lz = 0; lz < SubSize; ++lz)
+                    for (int32 ly = 0; ly < SubSize; ++ly)
+                        for (int32 lx = 0; lx < SubSize; ++lx)
+                            OutMask[(baseDX + lx + 1) + (baseDY + ly + 1) * PX + (lz + 1) * PX * PY] = 1;
+                continue;
+            }
+            ++IncludedChunks;
+
+            const int32 SubSizeD = ChunkSize >> D->LOD;   // taille RÉELLE stockée de CE chunk
 
             for (int32 lz = 0; lz < SubSize; ++lz)
                 for (int32 ly = 0; ly < SubSize; ++ly)
@@ -1064,12 +816,25 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
                         const int32 px = baseDX + lx + 1;
                         const int32 py = baseDY + ly + 1;
                         const int32 pz = lz + 1;
-                        OutVolume[px + py * PX + pz * PX * PY].Material.Id = 1;
+                        OutVolume[(baseDX + lx + 1) + (baseDY + ly + 1) * PX + (lz + 1) * PX * PY].Material.Id = 1;
                     }
         }
 
+    // 3bis) Plus AUCUN chunk de ce tier dans l'empreinte : ce cluster n'a rien à afficher.
+    //       Volume vide -> mesh vide -> SetStaticMesh(nullptr) côté apply.
+    //       Sans ce court-circuit, l'étape 4 remplirait quand même la coque de padding et
+    //       le mesher produirait un PLAN DE FRONTIÈRE PLEIN (fausse surface superposée).
+    if (LOD == 1 && IncludedChunks > 0 && IncludedChunks < NbChunk * NbChunk)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("BUILD T1 (%d,%d,%d) : %d/%d chunks inclus"),
+            ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, IncludedChunks, NbChunk * NbChunk);
+    }
+    
+    if (IncludedChunks == 0)
+        return true;
+
     // 4) Bords (padding) : échantillonnage global aux frontières -> raccord sans seam.
-    //    SampleGlobalVoxelSolidNoLock lit chaque voisin à SON propre LOD (déjà corrigé).
+    //    SampleGlobalVoxelSolidNoLock lit chaque voisin à SON propre LOD.
     const int32 BaseGX = ChunkOrigin.X * ChunkSize;   // géométrie-monde : PAS divisé par Step
     const int32 BaseGY = ChunkOrigin.Y * ChunkSize;
     const int32 BaseGZ = ChunkOrigin.Z * ChunkSize;
@@ -1092,7 +857,7 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
 
 // Greedy mesh sur volume de dimensions arbitraires (données déjà downsamplées -> Step interne = 1)
 void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-    const TArray<FVoxelDataStructure>& Pad, int32 SX, int32 SY, int32 SZ, float EVS)
+    const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EVS)
 {
     const int32 PX = SX + 2, PY = SY + 2, PZ = SZ + 2;
     const int32 Dims[3] = { SX, SY, SZ };
@@ -1103,6 +868,14 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
             if (ix < 0 || ix >= PX || iy < 0 || iy >= PY || iz < 0 || iz >= PZ) return false;
             const int32 idx = ix + iy * PX + iz * PX * PY;
             return Pad.IsValidIndex(idx) && Pad[idx].Material.Id > 0;
+        };
+
+    auto IsMasked = [&](int32 x, int32 y, int32 z) -> bool
+        {
+            const int32 ix = x + 1, iy = y + 1, iz = z + 1;
+            if (ix < 0 || ix >= PX || iy < 0 || iy >= PY || iz < 0 || iz >= PZ) return false;
+            const int32 idx = ix + iy * PX + iz * PX * PY;
+            return MaskVol.IsValidIndex(idx) && MaskVol[idx] != 0;
         };
 
     for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -1123,7 +896,11 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                 {
                     const bool a = Solid(Iter[0], Iter[1], Iter[2]);
                     const bool b = Solid(Iter[0] + q[0], Iter[1] + q[1], Iter[2] + q[2]);
-                    if (a == b)      Mask[N++] = FMask{ 0, 0 };
+                    // Un côté masqué => aucune face : cette frontière est fictive.
+                    if (IsMasked(Iter[0], Iter[1], Iter[2]) ||
+                        IsMasked(Iter[0] + q[0], Iter[1] + q[1], Iter[2] + q[2]))
+                        Mask[N++] = FMask{ 0, 0 };
+                    else if (a == b) Mask[N++] = FMask{ 0, 0 };
                     else if (a)      Mask[N++] = FMask{ 1, 1 };
                     else             Mask[N++] = FMask{ 1, -1 };
                 }
@@ -1187,28 +964,52 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
 bool AChunckManager::TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD)
 {
     TArray<FVoxelDataStructure> Volume;
+    TArray<uint8> MaskVol;
     int32 SX = 0, SY = 0, SZ = 0;
-    if (!BuildClusterPaddedVolume(ClusterCoord, LOD, Volume, SX, SY, SZ))
+    if (!BuildClusterPaddedVolume(ClusterCoord, LOD, Volume, MaskVol, SX, SY, SZ))
         return false;
 
+    // Ce job devient LE dernier snapshot connu de ce cluster.
+    // Tout job plus ancien encore en vol sera jeté à l'arrivée.
+    TMap<FIntVector, int32>& VersionMap =
+        (LOD == 1) ? ClusterMeshVersionTier1 :
+        (LOD == 2) ? ClusterMeshVersionTier2 : ClusterMeshVersionTier3;
+    const int32 MyVersion = ++VersionMap.FindOrAdd(ClusterCoord);
+
     const float EVS = VoxelSize * (float)(1 << LOD);
-    CurrentMeshJob++;
+    CurrentClusterMeshJob++;
     TWeakObjectPtr<AChunckManager> WeakThis(this);
 
     Async(EAsyncExecution::ThreadPool,
-        [WeakThis, Volume = MoveTemp(Volume), SX, SY, SZ, EVS, ClusterCoord, LOD]() mutable
+        [WeakThis, Volume = MoveTemp(Volume), MaskVol = MoveTemp(MaskVol), SX, SY, SZ, EVS, ClusterCoord, LOD, MyVersion]() mutable
         {
             if (!WeakThis.IsValid()) return;
             FChunckMeshData Mesh;
-            WeakThis->GenerateGreedyMeshVolume(Mesh, Volume, SX, SY, SZ, EVS);
+            WeakThis->GenerateGreedyMeshVolume(Mesh, Volume, MaskVol, SX, SY, SZ, EVS);
 
             AsyncTask(ENamedThreads::GameThread,
-                [WeakThis, Mesh = MoveTemp(Mesh), ClusterCoord, LOD]() mutable
+                [WeakThis, Mesh = MoveTemp(Mesh), ClusterCoord, LOD, MyVersion]() mutable
                 {
                     AChunckManager* M = WeakThis.Get();
                     if (!M) return;
-                    M->ApplyClusterVolumeMesh(ClusterCoord, LOD, Mesh);
-                    M->CurrentMeshJob = FMath::Max(0, M->CurrentMeshJob - 1);
+
+                    // Garde d'obsolescence (GT-only : pas de lock nécessaire).
+                    TMap<FIntVector, int32>& VMap =
+                        (LOD == 1) ? M->ClusterMeshVersionTier1 :
+                        (LOD == 2) ? M->ClusterMeshVersionTier2 : M->ClusterMeshVersionTier3;
+
+                    if (VMap.FindRef(ClusterCoord) == MyVersion)
+                    {
+                        M->ApplyClusterVolumeMesh(ClusterCoord, LOD, Mesh);
+                    }
+                    else
+                    {
+                        // Log temporaire : chaque tir prouve que la course existait.
+                        UE_LOG(LogTemp, Warning, TEXT("Cluster (%d,%d,%d) T%d : mesh périmé jeté (v%d, courant v%d)"),
+                            ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, LOD,
+                            MyVersion, VMap.FindRef(ClusterCoord));
+                    }
+                    M->CurrentClusterMeshJob = FMath::Max(0, M->CurrentClusterMeshJob - 1);
                 });
         });
     return true;
@@ -1216,31 +1017,94 @@ bool AChunckManager::TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD)
 
 void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh)
 {
-    TMap<FIntVector, UProceduralMeshComponent*>* Pool =
+    TMap<FIntVector, UStaticMeshComponent*>* Pool =
         (LOD == 1) ? &ClusterPoolTier1 : (LOD == 2) ? &ClusterPoolTier2 : &ClusterPoolTier3;
 
-    const int32 NbChunk = GetNbChunkForLOD(LOD);
+    const int32 NbChunk = GetNbChunkForLOD(LOD) / 3;
     const float ClusterWorldSize = (float)NbChunk * ChunkSize * VoxelSize;
     const FVector ClusterOrigin(
         ClusterCoord.X * ClusterWorldSize,
         ClusterCoord.Y * ClusterWorldSize,
         ClusterCoord.Z * (float)ChunkSize * VoxelSize);
 
-    UProceduralMeshComponent* PMC = nullptr;
-    if (UProceduralMeshComponent** Found = Pool->Find(ClusterCoord)) PMC = *Found;
-    if (!PMC)
+    // RÉUTILISATION du composant existant. Sans ce Find, chaque apply empile
+    // un composant orphelin toujours rendu -> mesh fantôme permanent.
+    UStaticMeshComponent* SMC = nullptr;
+    if (UStaticMeshComponent** Found = Pool->Find(ClusterCoord)) SMC = *Found;
+    if (!SMC)
     {
-        PMC = NewObject<UProceduralMeshComponent>(this);
-        PMC->RegisterComponent();
-        PMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
-        PMC->SetWorldLocation(ClusterOrigin);
-        Pool->Add(ClusterCoord, PMC);
+        SMC = NewObject<UStaticMeshComponent>(this);
+        // Mobility AVANT RegisterComponent : un composant Static déjà enregistré
+        // ne peut plus être déplacé -> le cluster resterait planté à l'origine.
+        SMC->SetMobility(EComponentMobility::Movable);
+        SMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);   // clusters LOD>0 = visuel seul
+        SMC->RegisterComponent();
+        SMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+        SMC->SetWorldLocation(ClusterOrigin);
+        Pool->Add(ClusterCoord, SMC);
     }
 
-    if (Mesh.Vertices.Num() == 0) { PMC->ClearMeshSection(0); return; }
+    // Cluster vide -> on détache le mesh (équivalent SMC du ClearMeshSection).
+    if (Mesh.Vertices.Num() == 0 || Mesh.Triangles.Num() < 3)
+    {
+        SMC->SetStaticMesh(nullptr);
+        return;
+    }
 
-    PMC->CreateMeshSection(0, Mesh.Vertices, Mesh.Triangles, Mesh.Normals,
-        Mesh.UVs, TArray<FColor>(), Mesh.Tangents, false);
+    // --- Conversion FChunckMeshData -> FMeshDescription ---
+    FMeshDescription MeshDescription;
+    FStaticMeshAttributes Attributes(MeshDescription);
+    Attributes.Register();
+
+    TVertexAttributesRef<FVector3f>          Positions = Attributes.GetVertexPositions();
+    TVertexInstanceAttributesRef<FVector3f>  Normals = Attributes.GetVertexInstanceNormals();
+    TVertexInstanceAttributesRef<FVector2f>  UVs = Attributes.GetVertexInstanceUVs();
+    UVs.SetNumChannels(1);
+
+    const int32 NumVerts = Mesh.Vertices.Num();
+    MeshDescription.ReserveNewVertices(NumVerts);
+    MeshDescription.ReserveNewVertexInstances(NumVerts);
+    MeshDescription.ReserveNewPolygons(Mesh.Triangles.Num() / 3);
+    MeshDescription.ReserveNewEdges(Mesh.Triangles.Num());
+
+    const FPolygonGroupID PolyGroup = MeshDescription.CreatePolygonGroup();
+
+    TArray<FVertexInstanceID> InstanceIDs;
+    InstanceIDs.Reserve(NumVerts);
+    for (int32 i = 0; i < NumVerts; ++i)
+    {
+        const FVertexID VID = MeshDescription.CreateVertex();
+        Positions[VID] = FVector3f(Mesh.Vertices[i]);
+
+        const FVertexInstanceID VIID = MeshDescription.CreateVertexInstance(VID);
+        // CreateQuad produit des normales de longueur VoxelSize -> normaliser.
+        if (Mesh.Normals.IsValidIndex(i))
+            Normals[VIID] = FVector3f(Mesh.Normals[i].GetSafeNormal());
+        if (Mesh.UVs.IsValidIndex(i))
+            UVs.Set(VIID, 0, FVector2f(Mesh.UVs[i]));
+
+        InstanceIDs.Add(VIID);
+    }
+
+    for (int32 t = 0; t + 2 < Mesh.Triangles.Num(); t += 3)
+    {
+        const int32 I0 = Mesh.Triangles[t], I1 = Mesh.Triangles[t + 1], I2 = Mesh.Triangles[t + 2];
+        if (!InstanceIDs.IsValidIndex(I0) || !InstanceIDs.IsValidIndex(I1) || !InstanceIDs.IsValidIndex(I2))
+            continue;
+        MeshDescription.CreateTriangle(PolyGroup, { InstanceIDs[I0], InstanceIDs[I1], InstanceIDs[I2] });
+    }
+
+    // --- Build ---
+    UStaticMesh* StaticMesh = NewObject<UStaticMesh>(this);
+    StaticMesh->GetStaticMaterials().Add(FStaticMaterial(ClusterMaterial));
+
+    UStaticMesh::FBuildMeshDescriptionsParams Params;
+    Params.bBuildSimpleCollision = false;
+    Params.bFastBuild = true;
+    Params.bMarkPackageDirty = false;
+    StaticMesh->BuildFromMeshDescriptions({ &MeshDescription }, Params);
+
+    SMC->SetStaticMesh(StaticMesh);   // EN DERNIER
 }
 /*
 void AChunckManager::ProcessPendingClusters()
@@ -1536,7 +1400,7 @@ bool AChunckManager::ResolveVoxelWorldIfNeeded()
     return IsValid(VoxelWorld);
 }
 
-void AChunckManager::RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep)
+void AChunckManager::RebuildDesiredChunkSet(TMap <FIntVector, int32>& OutChunksToKeep)
 {
     OutChunksToKeep.Reset();
     const int32 HR = FMath::Max(0, HorizontalViewDistance);
@@ -1546,44 +1410,72 @@ void AChunckManager::RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep)
     for (const TPair<APawn*, FIntVector>& Src : LastPlayerChunks)
     {
         if (!IsValid(Src.Key)) continue;
+        const FVector PlayerPos = Src.Key->GetActorLocation();
         const FIntVector& Center = Src.Value;
         for (int32 dx = -HR; dx <= HR; ++dx)
         for (int32 dy = -HR; dy <= HR; ++dy)
         {
             if (dx*dx + dy*dy > HRSq) continue;          // disque horizontal
             for (int32 dz = -VR; dz <= VR; ++dz)
-                OutChunksToKeep.Add(Center + FIntVector(dx, dy, dz));
+            {
+                FIntVector Coord = Center + FIntVector(dx, dy, dz);
+                const int32 LOD = GetLODForChunck(Coord, PlayerPos);
+                if (int32* Cur = OutChunksToKeep.Find(Coord))
+                    *Cur = FMath::Min(*Cur, LOD);
+                else
+                    OutChunksToKeep.Add(Coord, LOD);
+
+            }
         }
     }
 }
 
-void AChunckManager::BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks)
+void AChunckManager::BuildStreamingQueues(const TMap <FIntVector, int32>& DesiredChunks)
 {
     if (!IsValid(VoxelWorld)) return;
 
     // Snapshot des chunks existants UNE fois (un seul lock), pas par-coord.
-    TSet<FIntVector> Existing;
+    TMap <FIntVector, int32> Existing;
     {
         FScopeLock Lock(&VoxelWorld->ChunckMutex);
         Existing.Reserve(VoxelWorld->Chuncks.Num());
         for (const TPair<FIntVector, FChunckDataStructure>& P : VoxelWorld->Chuncks)
-            Existing.Add(P.Key);
+            Existing.Add(P.Key, P.Value.LOD);
     }
 
     // SPAWN : Desired − Existing
-    for (const FIntVector& Coord : DesiredChunks)
+    for (const TPair<FIntVector, int32> P : DesiredChunks)
     {
-        if (!Existing.Contains(Coord) && !PendingSpawnSet.Contains(Coord))
+
+
+        FIntVector Coord = P.Key;
+        if (IsChunkGuaranteedEmpty(Coord)) continue;
+        int32 LOD = P.Value;
+        const int32* CurrentLOD = Existing.Find(Coord);
+        if (!CurrentLOD)
         {
-            PendingSpawnQueue.Enqueue(Coord);
-            PendingSpawnSet.Add(Coord);
+            if (!PendingSpawnSet.Contains(Coord))
+            {
+                PendingSpawnQueue.Enqueue(Coord);
+                PendingSpawnSet.Add(Coord);
+            }
         }
+        else if (*CurrentLOD != LOD)
+        {
+            if (!PendingTransitionSet.Contains(Coord)) // ← borne la file
+            {
+                PendingTransitionQueue.Enqueue(Coord);
+                PendingTransitionSet.Add(Coord);
+            }
+        }
+
         PendingUnloadSet.Remove(Coord);   // redevenu désiré → annule un unload en attente
     }
 
     // UNLOAD : Existing − Desired
-    for (const FIntVector& Coord : Existing)
+    for (const TPair<FIntVector, int32> P : Existing)
     {
+        FIntVector Coord = P.Key;
         if (!DesiredChunks.Contains(Coord))
         {
             if (!PendingUnloadSet.Contains(Coord))
@@ -1600,6 +1492,10 @@ void AChunckManager::ProcessSpawnQueue()
 {
     if (!IsValid(VoxelWorld)) return;
     int32 Spawned = 0;
+    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    if (!Pawn) return;
+
+    FVector PlayerPos = Pawn->GetActorLocation();
     while (Spawned < MaxSpawnPerFrame)
     {
         FIntVector Coord;
@@ -1607,7 +1503,7 @@ void AChunckManager::ProcessSpawnQueue()
         if (!PendingSpawnSet.Contains(Coord)) continue;   // annulé
         PendingSpawnSet.Remove(Coord);
 
-        const int32 LOD = CalculChunkLODBeforeSpawn(Coord);
+        const int32 LOD = GetLODForChunck(Coord, PlayerPos);
         SpawnChunk(Coord, LOD, 1);                          // GenId=1 pour un spawn neuf
         ++Spawned;
     }
@@ -1622,14 +1518,21 @@ void AChunckManager::ProcessGenerationQueue()
         FIntVector Coord;
         if (!ChunckGenerationQueue.Dequeue(Coord)) break;
 
-        int32 ChunkLOD = 0; bool bDispatch = false;
+        int32 ChunkLOD = 0;
+        int32 GenerationId = 0;
+        bool bDispatch = false;
         {
             FScopeLock Lock(&VoxelWorld->ChunckMutex);
             if (FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Coord))
-                if (!Data->bIsChunckGenerated) { ChunkLOD = Data->LOD; bDispatch = true; }
+                if (!Data->bIsChunckGenerated) 
+                { 
+                    ChunkLOD = Data->LOD;
+                    GenerationId = Data->GenerationId;
+                    bDispatch = true;
+                }
         }
         if (!bDispatch) continue;                           // déchargé ou déjà généré
-        FillChunck(EChunkVariant::Full, Coord, ChunkLOD);   // → ChunckGenerationJobQueue
+        FillChunck(EChunkVariant::Full, Coord, ChunkLOD, GenerationId);   // → ChunckGenerationJobQueue
         ++Dispatched;
     }
 }
@@ -1637,13 +1540,12 @@ void AChunckManager::ProcessGenerationQueue()
 void AChunckManager::ProcessGenerationResults()
 {
     if (!IsValid(VoxelWorld)) return;
-    constexpr int32 MaxApplyPerFrame = 30;
-    int32 Applied = 0;
     static const FIntVector Dirs[6] =
         { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
 
+    const double Deadline = FPlatformTime::Seconds() + 0.003;   // budget 3 ms
     FChunkGenResult Result;
-    while (Applied < MaxApplyPerFrame && ChunckGenerationResult.Dequeue(Result))
+    while (ChunckGenerationResult.Dequeue(Result))
     {
         bool bAccepted = false, bSelfDirty = false;
         int32 ResultLOD = 0;
@@ -1652,6 +1554,7 @@ void AChunckManager::ProcessGenerationResults()
             FScopeLock Lock(&VoxelWorld->ChunckMutex);
             FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Result.Coord);
             if (!Data) continue;                             // déchargé → on jette le résultat
+            if (Data->GenerationId != Result.GenerationId) continue;
 
             Data->Voxels = MoveTemp(Result.Voxels);
             Data->bIsChunckGenerated = true;
@@ -1680,7 +1583,7 @@ void AChunckManager::ProcessGenerationResults()
             else if (ResultLOD == 2) PendingClusterTier2.Add(CC);
             else                     PendingClusterTier3.Add(CC);
         }
-        ++Applied;
+        if (FPlatformTime::Seconds() > Deadline) break;
     }
 }
 
@@ -1756,15 +1659,26 @@ void AChunckManager::ProcessPendingClusters()
         if (Pending.Num() == 0) return;
         for (const FIntVector& CC : Pending.Array())
         {
-            if (Dispatched >= MaxClusterDispatchPerFrame || CurrentMeshJob >= MaxMeshJob) return;
+            if (Dispatched >= MaxClusterDispatchPerFrame || CurrentClusterMeshJob >= MaxClusterMeshJob) return;
             if (TryDispatchClusterMesh(CC, LOD)) { Pending.Remove(CC); ++Dispatched; }
         }
     };
     ProcessTier(PendingClusterTier1, 1);
     ProcessTier(PendingClusterTier2, 2);
     ProcessTier(PendingClusterTier3, 3);
-}
 
+    // DIAGNOSTIC temporaire — une ligne par seconde.
+    static double LastDiag = 0.0;
+    const double Now = FPlatformTime::Seconds();
+    if (Now - LastDiag > 1.0)
+    {
+        LastDiag = Now;
+        UE_LOG(LogTemp, Warning,
+            TEXT("CLUSTERS pending T1=%d T2=%d T3=%d | dispatches=%d | jobs chunk=%d/%d cluster=%d/%d"),
+            PendingClusterTier1.Num(), PendingClusterTier2.Num(), PendingClusterTier3.Num(),
+            Dispatched, CurrentMeshJob, MaxMeshJob, CurrentClusterMeshJob, MaxClusterMeshJob);
+    }
+} 
 bool AChunckManager::UpdatePlayerChunkState()
 {
     UWorld* World = GetWorld();
@@ -1821,6 +1735,52 @@ bool AChunckManager::UpdatePlayerChunkState()
     return bAnyChanged;
 }
 
+void AChunckManager::ProcessTransitionQueue()
+{
+    if (!IsValid(VoxelWorld)) return;
+    int32 Done = 0;
+    APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+    APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+    if (!IsValid(Pawn)) return;
+    const FVector PlayerPos = Pawn->GetActorLocation();
+
+    while (Done < MaxSpawnPerFrame)
+    {
+        FIntVector Coord;
+        if (!PendingTransitionQueue.Dequeue(Coord)) break;
+        if (!PendingTransitionSet.Contains(Coord)) continue;
+        PendingTransitionSet.Remove(Coord);
+
+        int32 NewGenId = 1;
+        int32 OldLOD = -1;
+        {
+            FScopeLock Lock(&VoxelWorld->ChunckMutex);
+            FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(Coord);
+            if (!Data) continue;                  // déchargé entre-temps
+            NewGenId = Data->GenerationId + 1;    // bump, PAS reset
+            OldLOD = Data->LOD;
+            if (Data->VoxelChunck.IsValid())
+            {
+                Data->VoxelChunck->bIsBeingDestroyed = true;
+                Data->VoxelChunck->Destroy();
+            }
+            VoxelWorld->Chuncks.Remove(Coord);
+        }
+
+        // Le chunk quittait un cluster → re-mesh du cluster SANS lui,
+        // sinon sa géométrie d'origine reste affichée (mesh fantôme).
+        if (OldLOD >= 1)
+        {
+            InvalidateCluster(GetClusterCoord(Coord, OldLOD), OldLOD);
+        }
+
+        const int32 LOD = GetLODForChunck(Coord, PlayerPos);
+        SpawnChunk(Coord, LOD, NewGenId);
+        UE_LOG(LogTemp, Warning, TEXT("TRANSITION (%d,%d,%d) : LOD %d -> %d"),
+            Coord.X, Coord.Y, Coord.Z, OldLOD, LOD);
+        ++Done;
+    }
+}
 void AChunckManager::ProcessUnloadQueue()
 {
     if (!IsValid(VoxelWorld)) return;
@@ -1881,7 +1841,54 @@ void AChunckManager::ProcessUnloadQueue()
     }
 
     // Re-dispatch des clusters impactés (une fois chacun, pas par chunk retiré).
-    for (const FIntVector& CC : ClustersTier1Touched) PendingClusterTier1.Add(CC);
-    for (const FIntVector& CC : ClustersTier2Touched) PendingClusterTier2.Add(CC);
-    for (const FIntVector& CC : ClustersTier3Touched) PendingClusterTier3.Add(CC);
+    for (const FIntVector& CC : ClustersTier1Touched) InvalidateCluster(CC, 1);
+    for (const FIntVector& CC : ClustersTier2Touched) InvalidateCluster(CC, 2);
+    for (const FIntVector& CC : ClustersTier3Touched) InvalidateCluster(CC, 3);
+}
+
+
+bool AChunckManager::IsChunkGuaranteedEmpty(const FIntVector& Coord) const
+{
+    // Bas du chunk en voxels-monde. Marge d'un chunk pour absorber tout dépassement de bruit/octaves.
+    const int32 ChunkMinZVoxel = Coord.Z * ChunkSize;
+    const int32 MaxSurfaceVoxel = BaseHeight + FMath::CeilToInt(SurfaceAmplitude) + ChunkSize;
+    return ChunkMinZVoxel >= MaxSurfaceVoxel;   // tout le chunk est au-dessus de toute surface possible
+}
+
+void AChunckManager::InvalidateCluster(FIntVector ClusterCoord, int32 LOD)
+{
+    if (LOD < 1) return;
+
+    // 1) Effacement immédiat : c'est LE point qui manquait. Ne dépend d'aucun budget,
+    //    d'aucun readiness, d'aucun job async. Suppression garantie, comme un Destroy().
+    TMap<FIntVector, UStaticMeshComponent*>* Pool =
+        (LOD == 1) ? &ClusterPoolTier1 : (LOD == 2) ? &ClusterPoolTier2 : &ClusterPoolTier3;
+    if (UStaticMeshComponent** Found = Pool->Find(ClusterCoord))
+        if (UStaticMeshComponent* SMC = *Found)
+            SMC->SetStaticMesh(nullptr);
+
+    // 2) Bump de version : sans ça, un job parti AVANT cet effacement pourrait arriver
+    //    APRÈS et ré-appliquer la géométrie périmée par-dessus la section vidée.
+    TMap<FIntVector, int32>& VMap =
+        (LOD == 1) ? ClusterMeshVersionTier1 :
+        (LOD == 2) ? ClusterMeshVersionTier2 : ClusterMeshVersionTier3;
+    ++VMap.FindOrAdd(ClusterCoord);
+
+    // 3) Reconstruction demandée (peut prendre plusieurs frames — le trou est visible, tant mieux).
+    if (LOD == 1)      PendingClusterTier1.Add(ClusterCoord);
+    else if (LOD == 2) PendingClusterTier2.Add(ClusterCoord);
+    else               PendingClusterTier3.Add(ClusterCoord);
+
+    UE_LOG(LogTemp, Warning, TEXT("INVALIDATE T%d (%d,%d,%d) : compo=%s"),
+        LOD, ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z,
+        Pool->Contains(ClusterCoord) ? TEXT("oui") : TEXT("ABSENT"));
+}
+
+void AChunckManager::NukeClusters()
+{
+    int32 Cleared = 0;
+    for (auto* Pool : { &ClusterPoolTier1, &ClusterPoolTier2, &ClusterPoolTier3 })
+        for (auto& P : *Pool)
+            if (P.Value) { P.Value->SetStaticMesh(nullptr); ++Cleared; }
+    UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vidés (manager %s)"), Cleared, *GetName());
 }

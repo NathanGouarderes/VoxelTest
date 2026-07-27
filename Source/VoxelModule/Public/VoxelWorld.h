@@ -32,7 +32,7 @@ public:
 	FVoxelDataStructure& GetVoxel(FChunckDataStructure& Chunk, int x, int y, int z);
 	void ProcessDirtyChunks();
 
-	static constexpr int ChunckSize = 32;
+	static constexpr int ChunckSize = 128;
 
 	TMap<FIntVector, FChunckDataStructure> Chuncks;
 	FCriticalSection ChunckMutex;

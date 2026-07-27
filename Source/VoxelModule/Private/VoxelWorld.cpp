@@ -5,7 +5,7 @@
 //#include "FChunkMeshResult.h"
 #include "FChunckMeshData.h"
 #include "ChunckManager.h"
-
+#include "Kismet/GameplayStatics.h"
 
 // Sets default values
 AVoxelWorld::AVoxelWorld()
@@ -22,26 +22,19 @@ void AVoxelWorld::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!ChunckManager)
+    TArray<AActor*> Found;
+    UGameplayStatics::GetAllActorsOfClass(GetWorld(), AChunckManager::StaticClass(), Found);
+
+    if (Found.Num() > 1)
     {
-        ChunckManager = GetWorld()->SpawnActor<AChunckManager>(FVector::ZeroVector, FRotator::ZeroRotator);
-        UE_LOG(LogTemp, Warning, TEXT("AVoxelWorld::BeginPlay() : ChunckManager Cree"));
-        if (ChunckManager)
-        {
-            UE_LOG(LogTemp, Warning, TEXT("AVoxelWorld::BeginPlay() : ChunckManager valide"));
-            ChunckManager->VoxelWorld = this;
-            UE_LOG(LogTemp, Warning, TEXT("AVoxelWorld::BeginPlay() : ChunckManager spawné et LIÉ avec succès !"));
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("AVoxelWorld::BeginPlay() : ÉCHEC spawn du ChunckManager"));
-        }
+        UE_LOG(LogTemp, Error, TEXT("%d ChunckManager dans le monde — il n'en faut qu'un."), Found.Num());
     }
-    //GenerateWorld();
 
+    ChunckManager = Found.Num() > 0
+        ? Cast<AChunckManager>(Found[0])
+        : GetWorld()->SpawnActor<AChunckManager>(FVector::ZeroVector, FRotator::ZeroRotator);
 
-    // Optionnel : pour tester tout de suite la queue
-    // ProcessDirtyChunks();   // décommente si tu veux voir RegisterDirtyChunk
+    if (ChunckManager) ChunckManager->VoxelWorld = this;
 }
 
 // Called every frame

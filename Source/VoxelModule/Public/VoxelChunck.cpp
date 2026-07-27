@@ -13,7 +13,7 @@ AVoxelChunck::AVoxelChunck()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
-	Size = 32;
+	Size = 128;
 	//VoxelData.SetNum(Size * Size * Size);
 	ProceduralMeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProceduralMeshComponent"));
 	RootComponent = ProceduralMeshComponent;

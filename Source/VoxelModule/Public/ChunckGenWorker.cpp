@@ -95,6 +95,7 @@ uint32 ChunckGenWorker::Run()
 			FChunkGenResult Result;
 			Result.Coord = Job.Coord;
 			Result.LOD = Job.LOD;
+			Result.GenerationId = Job.GenerationId;
 			Result.Voxels = MoveTemp(LocalVoxel);
 			Result.bIsAllEmpty = bIsAllEmpty;
 			Result.bIsAllSolid = bIsAllSolid;

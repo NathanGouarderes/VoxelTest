@@ -14,6 +14,7 @@
 #include "FChunkGenResult.h"
 #include "FClusterGenData.h"
 #include "FMask.h"
+#include "Engine/StaticMesh.h"
 #include "ChunckManager.generated.h"
 
 class ChunckGenWorker;
@@ -43,10 +44,10 @@ public:
 	void GetAllPlayerChunks(TSet<FIntVector>& GlobalChunksToKeep);
 	FIntVector GetPlayerChunck(const FVector& PlayerPos) const;
 	void GenerateTerrain(FChunckDataStructure& Data, FIntVector Coord);
-	void FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD);
+	void FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD, int32 GenerationId);
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
-	int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
+	//int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
 	
 	void GenerateAsyncGreedyMesh(FIntVector Coord);
 	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
@@ -61,8 +62,8 @@ public:
 	void MarkVisibilityClean();
 	bool ShouldRebuildVisibility() const;
 	bool ResolveVoxelWorldIfNeeded();
-	void RebuildDesiredChunkSet(TSet<FIntVector>& OutChunksToKeep);
-	void BuildStreamingQueues(const TSet<FIntVector>& DesiredChunks);
+	void RebuildDesiredChunkSet(TMap <FIntVector, int32>& OutChunksToKeep);
+	void BuildStreamingQueues(const TMap <FIntVector, int32>& DesiredChunks);
 	void ProcessSpawnQueue();
 	void ProcessGenerationQueue();
     void ProcessGenerationResults();
@@ -70,17 +71,23 @@ public:
     void ProcessMeshJobs();
     void ProcessPendingClusters();
 	void ProcessUnloadQueue();
+	void ProcessTransitionQueue();
 	bool UpdatePlayerChunkState();
 
+	
+	void InvalidateCluster(FIntVector ClusterCoord, int32 LOD);
+	bool IsChunkGuaranteedEmpty(const FIntVector& Coord) const;
 
+	UFUNCTION(Exec)
+	void NukeClusters();
 
 	// === Cluster volume meshing ===
 	int32 GetNbChunkForLOD(int32 LOD) const;
 	bool SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ);
 	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
-		TArray<FVoxelDataStructure>& OutVolume, int32& OutSX, int32& OutSY, int32& OutSZ);
+		TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ);
 	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-		const TArray<FVoxelDataStructure>& Pad, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
+		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
 
@@ -90,11 +97,23 @@ TQueue<FIntVector> PendingUnloadQueue;
 
 	TSet<FIntVector> PendingSpawnSet;
 
+	TQueue<FIntVector> PendingTransitionQueue;
+
+	TSet<FIntVector> PendingTransitionSet;
+
+
 	TSet<FIntVector> PendingUnloadSet;
 
 	TSet<FIntVector> PendingClusterTier1;
 	TSet<FIntVector> PendingClusterTier2;
 	TSet<FIntVector> PendingClusterTier3;
+	//TSet<FIntVector> PendingClusterTier4;
+	//TSet<FIntVector> PendingClusterTier5;
+
+	TMap<FIntVector, int32> ClusterMeshVersionTier1;
+	TMap<FIntVector, int32> ClusterMeshVersionTier2;
+	TMap<FIntVector, int32> ClusterMeshVersionTier3;
+
 
 	bool bVisibilityInitialized;
 
@@ -120,24 +139,24 @@ TQueue<FIntVector> PendingUnloadQueue;
 	int VoxelSize = 10;
 
 	UPROPERTY(EditAnywhere)
-	int ChunkSize = 32;
+	int ChunkSize = 128;//32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 50;
+	int32 HorizontalViewDistance = 20;
 	int32 VerticalViewDistance = 10;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 3000.0f, 8000.0f, 16000.0f, 32000.0f, 50000.0f, 150000.0f };
+	 TArray<float> LODDistances = { 12000.0f, 40000.0f, 64000.0f, 144000.0f/*, 50000.0f, 150000.0f*/};
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	int MaxLOD = 5;
+	int MaxLOD = 3;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | Spawn")
 	float PlayerSpawnHeight = 110.0f;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
-	int32 MaxSpawnPerFrame = 80;
+	int32 MaxSpawnPerFrame = 2000;
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
-	int MaxRebuildPerFrame = 60;
+	int MaxRebuildPerFrame = 200;
 	float LastUpdateTime = 0.0f;
 	bool bForceUpdate = true;
 	FIntVector LastPlayerChunk = FIntVector::ZeroValue;
@@ -152,6 +171,8 @@ TQueue<FIntVector> PendingUnloadQueue;
 	TArray<FRunnableThread*> WorkerThreads;
 	TArray<ChunckGenWorker*> Workers;
 	FCriticalSection DequeueMutex;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voxel")
+	TObjectPtr<UMaterialInterface> ClusterMaterial;
 	//TArray<TObjectPtr<AClusterChunk>> ClusterPool;
 
 	int32 NumWorkers = 6;
@@ -159,13 +180,15 @@ TQueue<FIntVector> PendingUnloadQueue;
 	int32 NumThreads;
 	int MaxGenPerFrame;
 
-	int32 CurrentMeshJob;
+	int32 CurrentMeshJob = 0;
+	int32 CurrentClusterMeshJob = 0;
+	int32 MaxClusterMeshJob = 3;
 	int32 MaxMeshJob;
 	int32 DesiredLOD;
 
-	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier1;
-	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier2;
-	TMap<FIntVector, UProceduralMeshComponent*> ClusterPoolTier3;
+	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier1;
+	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier2;
+	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier3;
 
 	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier1;
 	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier2;

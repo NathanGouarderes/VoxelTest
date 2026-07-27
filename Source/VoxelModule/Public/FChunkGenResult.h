@@ -10,6 +10,7 @@ struct FChunkGenResult
 {
     FIntVector Coord;
     int32 LOD = 0;
+    int32 GenerationId = 0;
     TArray<FVoxelDataStructure> Voxels;
     TArray<FChunckDataStructure> ChunkData;
     TArray<FChunkMeshResult> ChunkMeshData;

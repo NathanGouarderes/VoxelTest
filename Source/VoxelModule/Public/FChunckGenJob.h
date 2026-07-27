@@ -11,9 +11,10 @@ class AChunckManager;
 struct FChunkGenJob
 {
 	int32 LOD = 0;
+	int32 GenerationId = 0;
 	FIntVector Coord;
 	EChunkVariant Variant;
-	int32 ChunkSize = 32; // Valeur par défaut de sécurité
+	int32 ChunkSize = 128; // Valeur par défaut de sécurité
 	float SurfaceFrequency = 0.01f;
 	float SurfaceAmplitude = 50.0f;
 	int32 BaseHeight = 64;
@@ -24,6 +25,6 @@ struct FChunkGenJob
 	FastNoiseLite CaveNoise;
 
 	FChunkGenJob() : Coord(FIntVector::ZeroValue), Variant(EChunkVariant::Full){}
-	FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD);
+	FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD, int32 InGenerationId);
 	
 };
