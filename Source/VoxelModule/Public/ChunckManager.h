@@ -200,6 +200,10 @@ TQueue<FIntVector> PendingUnloadQueue;
 	FastNoiseLite CaveNoise;
 	UPROPERTY(EditAnywhere)
 	float SurfaceFrequency;     // 2D → collines larges et naturelles 0.006
+	UPROPERTY(EditAnywhere, Category = "Voxel | Terrain")
+	float SurfaceWavelength = 2500.0f;   // en voxels
+	UPROPERTY(EditAnywhere, Category = "Voxel | Terrain")
+	float SurfaceAmplitude = 600.0f;     // en voxels (±60 m)
 	UPROPERTY(EditAnywhere)
     float SurfaceAmplitude;      // hauteur des montagnes
 	UPROPERTY(EditAnywhere)
