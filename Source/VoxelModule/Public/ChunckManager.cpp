@@ -124,6 +124,18 @@ void AChunckManager::Tick(float DeltaTime)
     ProcessMeshJobs();
     ProcessPendingClusters();
     ProcessUnloadQueue();
+    UE_LOG(LogTemp, Warning,
+TEXT("GEN RESULTS=%d DIRTY=%d PENDING_MESH=%d T1=%d T2=%d T3=%d"),
+ChunckGenerationResultCount,
+DirtyChuncks.Num(),
+PendingMeshCount,
+PendingClusterTier1.Num(),
+PendingClusterTier2.Num(),
+PendingClusterTier3.Num());
+    UE_LOG(LogTemp, Warning,
+TEXT("CurrentMeshJob=%d/%d"),
+CurrentMeshJob,
+MaxMeshJob);
 }
 
 void AChunckManager::MarkVisibilityClean()
