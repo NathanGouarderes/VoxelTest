@@ -205,8 +205,6 @@ TQueue<FIntVector> PendingUnloadQueue;
 	UPROPERTY(EditAnywhere, Category = "Voxel | Terrain")
 	float SurfaceAmplitude = 600.0f;     // en voxels (±60 m)
 	UPROPERTY(EditAnywhere)
-    float SurfaceAmplitude;      // hauteur des montagnes
-	UPROPERTY(EditAnywhere)
     int   BaseHeight;               // niveau moyen du sol
 	UPROPERTY(EditAnywhere)
     float CaveFrequency;        // 3D → taille des grottes
