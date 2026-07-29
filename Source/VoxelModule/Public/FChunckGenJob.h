@@ -17,6 +17,7 @@ struct FChunkGenJob
 	int32 ChunkSize = 128; // Valeur par défaut de sécurité
 	float SurfaceFrequency = 0.01f;
 	float SurfaceAmplitude = 50.0f;
+	float SurfaceWavelength = 100.0f;
 	int32 BaseHeight = 64;
 	float CaveFrequency = 0.01f;
 	float CaveThreshold = 0.5f;
