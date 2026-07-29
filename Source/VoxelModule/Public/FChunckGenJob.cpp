@@ -11,6 +11,7 @@ FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckM
         CaveFrequency = Manager->CaveFrequency;
         CaveThreshold = Manager->CaveThreshold;
         SeaLevel = Manager->SeaLevel;
+        SurfaceWavelength = Manager->SurfaceWavelength;
 
 
         // On copie la configuration du bruit
