@@ -12,9 +12,7 @@
 #include "StaticMeshAttributes.h"
 
 // Sets default values
-AChunckManager::AChunckManager():
-    SurfaceFrequency(0.026f)
-    , SurfaceAmplitude(80.0f)
+AChunckManager::AChunckManager():    
     , BaseHeight(408)
     , CaveFrequency(0.038f)
     , CaveThreshold(0.42f)
@@ -53,7 +51,7 @@ void AChunckManager::BeginPlay()
             if (!Pawn) return;
 
             FVector Pos = Pawn->GetActorLocation();
-            Pos.Z += 2000.f; // 🔥 hauteur safe
+            Pos.Z = (BaseHeight + SurfaceAmplitude) * VoxelSize; // 🔥 hauteur safe
 
             Pawn->SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -276,7 +274,7 @@ float AChunckManager::GetNoise(float WorldX, float WorldY)
 void AChunckManager::InitNoise()
 {
     SurfaceNoise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
-    SurfaceNoise.SetFrequency(SurfaceFrequency);
+    SurfaceNoise.SetFrequency(1);
     CaveNoise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     CaveNoise.SetFrequency(CaveFrequency);
 }
