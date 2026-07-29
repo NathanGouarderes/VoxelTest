@@ -55,10 +55,10 @@ uint32 ChunckGenWorker::Run()
 		{
 			for (int y = 0; y < SubSize; y++)
 			{
-				float WorldX = (Job.Coord.X * ChunckSize + x * Step) * Job.SurfaceFrequency;
-				float WorldY = (Job.Coord.Y * ChunckSize + y * Step) * Job.SurfaceFrequency;
+				const float WorldX = (Job.Coord.X * ChunckSize + x * Step);
+				const float WorldY = (Job.Coord.Y * ChunckSize + y * Step);
 
-				float SurfaceNoiseValue = Job.SurfaceNoise.GetNoise(WorldX, WorldY);
+				const float SurfaceNoiseValue = Job.SurfaceNoise.GetNoise(WorldX / Job.SurfaceWavelength, WorldY / Job.SurfaceWavelength);
 				int GlobalSurfaceHeigh = Job.BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * Job.SurfaceAmplitude);
 
 				for (int z = 0; z < SubSize; z++)
