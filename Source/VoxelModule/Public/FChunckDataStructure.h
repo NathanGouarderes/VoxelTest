@@ -7,6 +7,7 @@ struct FChunckDataStructure
 {
 	int32 id;
 	int32 LOD = 0;
+	int32 RenderedByTier = -1;   // -1 = personne, 0 = acteur LOD0, 1/2/3 = tier cluster
 	FIntVector Coord;
 	TArray<FVoxelDataStructure> Voxels;
 	int32 GenerationId = 0;
