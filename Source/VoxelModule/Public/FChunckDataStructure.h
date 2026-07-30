@@ -3,6 +3,13 @@
 #include "Math/IntVector.h"
 #include "FVoxelDataStructure.h"
 
+enum EChunkLODPhase
+{
+	Stable,
+	GeneratingData,
+	AwaitingNewMesh,
+};
+
 struct FChunckDataStructure
 {
 	int32 id;
@@ -15,7 +22,17 @@ struct FChunckDataStructure
 	bool bIsQueued = false;
 	bool bIsChunckGenerated;
 	bool bPendingKill = false;
+	EChunkLODPhase Phase = EChunkLODPhase::Phase;
 	TWeakObjectPtr<class AVoxelChunck> VoxelChunck;
+
+ 	TArray<FVoxelDataStructure> PendingVoxels;
+    int32 PendingLOD = INDEX_NONE;
+    int32 PendingGenerationId = 0;
+
+	int32 ReleaseLOD = INDEX_NONE;
+    FIntVector ReleaseClusterCoord = FIntVector::ZeroValue;
+
+    double PhaseEnteredTime = 0.0;
 	FChunckDataStructure()
 	{
 		bIsChunckGenerated = false;
