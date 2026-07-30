@@ -79,6 +79,11 @@ public:
 	void InvalidateCluster(FIntVector ClusterCoord, int32 LOD);
 	bool IsChunkGuaranteedEmpty(const FIntVector& Coord) const;
 
+	void ProcessLODCommits();
+	void ProcessLODWatchdog();
+	void NotifyDisplayApplied(FIntVector Coord);
+	void RequestClusterRebuild(FIntVector ClusterCoord, int32 Tier);
+
 	UFUNCTION(Exec)
 	void NukeClusters();
 
@@ -189,6 +194,11 @@ public:
 	int32 MaxClusterMeshJob = 3;
 	int32 MaxMeshJob;
 	int32 DesiredLOD;
+	PROPERTY(EditAnywhere, Category = "Voxel | LOD")
+	float LODSwapWatchdogSeconds = 5.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+	int32 MaxConcurrentLODTransitions = 64;
 
 	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier1;
 	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier2;
