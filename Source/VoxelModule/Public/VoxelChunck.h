@@ -61,7 +61,7 @@ public:
 
 	int32 CurrentLOD;
 	bool bIsDirty;
-	int8 Size;
+	int32 Size;
 	UProceduralMeshComponent* ProceduralMeshComponent;
 	float VoxelSize;
 	FChunckMeshData ChunckDataMesh;

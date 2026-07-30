@@ -5,12 +5,12 @@ FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckM
     if (Manager)
     {
         ChunkSize = Manager->ChunkSize;
-        SurfaceFrequency = Manager->SurfaceFrequency;
         SurfaceAmplitude = Manager->SurfaceAmplitude;
         BaseHeight = Manager->BaseHeight;
         CaveFrequency = Manager->CaveFrequency;
         CaveThreshold = Manager->CaveThreshold;
         SeaLevel = Manager->SeaLevel;
+        SurfaceWavelength = Manager->SurfaceWavelength;
 
 
         // On copie la configuration du bruit

@@ -35,6 +35,11 @@ void AVoxelWorld::BeginPlay()
         : GetWorld()->SpawnActor<AChunckManager>(FVector::ZeroVector, FRotator::ZeroRotator);
 
     if (ChunckManager) ChunckManager->VoxelWorld = this;
+
+    TArray<AActor*> DbgW; UGameplayStatics::GetAllActorsOfClass(GetWorld(), AVoxelWorld::StaticClass(), DbgW);
+    UE_LOG(LogTemp, Warning, TEXT("BeginPlay — %d VoxelWorld"), DbgW.Num());
+    for (AActor* A : Found)   // Found = ta liste de managers, déjà remplie juste avant
+        UE_LOG(LogTemp, Warning, TEXT("   manager %s (placé=%d)"), *A->GetName(), A->IsNetStartupActor());
 }
 
 // Called every frame

@@ -9,6 +9,17 @@
 AVoxelGameMode::AVoxelGameMode()
 {
 	PlayerControllerClass = APlayerControllerComponent::StaticClass();
+	static ConstructorHelpers::FClassFinder<APawn> PawnClass(
+		TEXT("/Game/Characters/BP_BaseCharacter"));
+
+	if (PawnClass.Succeeded())
+	{
+		DefaultPawnClass = PawnClass.Class;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("BP_BaseCharacter introuvable"));
+	}
 }
 
 void AVoxelGameMode::BeginPlay()
@@ -20,7 +31,7 @@ void AVoxelGameMode::BeginPlay()
 
 void AVoxelGameMode::Tick(float DeltaTime)
 {
-
+	Super::Tick(DeltaTime);
 }
 
 void AVoxelGameMode::Generate20Chuncks()

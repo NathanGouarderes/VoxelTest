@@ -9,6 +9,7 @@
 #include "FastNoiseLite.h"
 #include "Engine/World.h"
 #include "HAL/RunnableThread.h"
+#include "Engine/TimerHandle.h"
 #include "EChunkVariant.h"
 #include "FChunckGenJob.h"
 #include "FChunkGenResult.h"
@@ -25,8 +26,8 @@ UCLASS()
 class VOXELMODULE_API AChunckManager : public AActor
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	// Sets default values for this actor's properties
 	AChunckManager();
 
@@ -35,7 +36,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-public:	
+public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void RegisterDirtyChunk(FIntVector Coord);
@@ -48,13 +49,13 @@ public:
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	//int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
-	
+
 	void GenerateAsyncGreedyMesh(FIntVector Coord);
 	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
 	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
 	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize);
-	
+
 	//void GenerateAsyncGreedyMeshForCluster(FIntVector Coord);
 	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
@@ -66,15 +67,15 @@ public:
 	void BuildStreamingQueues(const TMap <FIntVector, int32>& DesiredChunks);
 	void ProcessSpawnQueue();
 	void ProcessGenerationQueue();
-    void ProcessGenerationResults();
-    void ProcessDirtyChunks();
-    void ProcessMeshJobs();
-    void ProcessPendingClusters();
+	void ProcessGenerationResults();
+	void ProcessDirtyChunks();
+	void ProcessMeshJobs();
+	void ProcessPendingClusters();
 	void ProcessUnloadQueue();
 	void ProcessTransitionQueue();
 	bool UpdatePlayerChunkState();
 
-	
+
 	void InvalidateCluster(FIntVector ClusterCoord, int32 LOD);
 	bool IsChunkGuaranteedEmpty(const FIntVector& Coord) const;
 
@@ -91,7 +92,7 @@ public:
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
 
-TQueue<FIntVector> PendingUnloadQueue;
+	TQueue<FIntVector> PendingUnloadQueue;
 
 	TQueue<FIntVector> PendingSpawnQueue;
 
@@ -119,14 +120,14 @@ TQueue<FIntVector> PendingUnloadQueue;
 
 	bool bNeedsInitialBuild = true;
 
-    bool bPlayerChangedChunk;
+	bool bPlayerChangedChunk;
 
-    bool bStreamingSettingsDirty;
+	bool bStreamingSettingsDirty;
 
-    bool bForceVisibilityRefresh;
+	bool bForceVisibilityRefresh;
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
-	int32 MaxClusterDispatchPerFrame = 4;
+	int32 MaxClusterDispatchPerFrame = 64;
 
 	TSet<FIntVector> DirtyChuncks;
 	TSet<FIntVector> PendingLODMesh;
@@ -142,11 +143,14 @@ TQueue<FIntVector> PendingUnloadQueue;
 	int ChunkSize = 128;//32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 20;
+	int32 HorizontalViewDistance = 40;
 	int32 VerticalViewDistance = 10;
 
+	FTimerHandle SafeSpawnTimer;
+	void TrySafeSpawn();
+
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	 TArray<float> LODDistances = { 12000.0f, 40000.0f, 64000.0f, 144000.0f/*, 50000.0f, 150000.0f*/};
+	TArray<float> LODDistances = { 4000.0f, 4500.0f, 7000.0f, 144000.0f/*, 50000.0f, 150000.0f*/ };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -175,7 +179,7 @@ TQueue<FIntVector> PendingUnloadQueue;
 	TObjectPtr<UMaterialInterface> ClusterMaterial;
 	//TArray<TObjectPtr<AClusterChunk>> ClusterPool;
 
-	int32 NumWorkers = 6;
+	int32 NumWorkers = 14;
 
 	int32 NumThreads;
 	int MaxGenPerFrame;
@@ -200,17 +204,24 @@ TQueue<FIntVector> PendingUnloadQueue;
 	FastNoiseLite CaveNoise;
 	UPROPERTY(EditAnywhere)
 	float SurfaceFrequency;     // 2D → collines larges et naturelles 0.006
+	UPROPERTY(EditAnywhere, Category = "Voxel | Terrain")
+	float SurfaceWavelength = 2500.0f;   // en voxels
+	UPROPERTY(EditAnywhere, Category = "Voxel | Terrain")
+	float SurfaceAmplitude = 600.0f;     // en voxels (±60 m)
 	UPROPERTY(EditAnywhere)
-    float SurfaceAmplitude;      // hauteur des montagnes
+	int   BaseHeight;               // niveau moyen du sol
 	UPROPERTY(EditAnywhere)
-    int   BaseHeight;               // niveau moyen du sol
+	float CaveFrequency;        // 3D → taille des grottes
 	UPROPERTY(EditAnywhere)
-    float CaveFrequency;        // 3D → taille des grottes
+	float CaveThreshold;      // plus bas = plus de grottes
 	UPROPERTY(EditAnywhere)
-    float CaveThreshold;      // plus bas = plus de grottes
-	UPROPERTY(EditAnywhere)
-    int   SeaLevel;         // niveau de la mer (lacs + océan)
+	int   SeaLevel;         // niveau de la mer (lacs + océan)
+
 
 	std::atomic<bool> bIsShuttingDown;
+
+
+	int PendingMeshClusterCount;
+	int PendingClusterGenCount;
 
 };

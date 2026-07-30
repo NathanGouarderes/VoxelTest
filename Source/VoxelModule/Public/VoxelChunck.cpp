@@ -29,7 +29,7 @@ AVoxelChunck::AVoxelChunck()
 void AVoxelChunck::BeginPlay()
 {
 	Super::BeginPlay();
-
+	
 	/*
 	ChunckManager = Cast<AChunckManager>(UGameplayStatics::GetActorOfClass(GetWorld(), AChunckManager::StaticClass())
 	);
