@@ -75,8 +75,6 @@ public:
 	void ProcessTransitionQueue();
 	bool UpdatePlayerChunkState();
 
-
-	void InvalidateCluster(FIntVector ClusterCoord, int32 LOD);
 	bool IsChunkGuaranteedEmpty(const FIntVector& Coord) const;
 
 	void ProcessLODCommits();
@@ -194,11 +192,6 @@ public:
 	int32 MaxClusterMeshJob = 3;
 	int32 MaxMeshJob;
 	int32 DesiredLOD;
-	PROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	float LODSwapWatchdogSeconds = 5.0f;
-	
-	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	int32 MaxConcurrentLODTransitions = 64;
 
 	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier1;
 	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier2;
@@ -226,6 +219,16 @@ public:
 	float CaveThreshold;      // plus bas = plus de grottes
 	UPROPERTY(EditAnywhere)
 	int   SeaLevel;         // niveau de la mer (lacs + océan)
+
+int32 NextGenerationId = 1;
+TSet<FIntVector> PendingCommitSet;
+TSet<FIntVector> ChunksAwaitingMesh;
+
+UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+float LODSwapWatchdogSeconds = 5.0f;
+
+UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+int32 MaxConcurrentLODTransitions = 512;
 
 
 	std::atomic<bool> bIsShuttingDown;
