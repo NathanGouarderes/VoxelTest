@@ -12,6 +12,16 @@
 
 #include "StaticMeshAttributes.h"
 
+static FORCEINLINE int32 FloorDivInt(int32 A, int32 B)
+{
+    const int32 Q = A / B;
+    return (A % B != 0 && ((A < 0) != (B < 0))) ? Q - 1 : Q;
+}
+
+// Le padding est construit par Memcpy : la structure doit rester copiable octet a octet.
+static_assert(TIsTriviallyCopyConstructible<FVoxelDataStructure>::Value,
+              "FVoxelDataStructure doit rester trivialement copiable (Memcpy du padding)");
+
 // Sets default values
 AChunckManager::AChunckManager() :
     SurfaceWavelength(2500.0f)
@@ -616,144 +626,105 @@ int32 AChunckManager::CalculChunkLODBeforeSpawn(FIntVector Coord)
 
 void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
 {
-    if (!VoxelWorld || !IsValid(this))
+    bool bDispatched = false;
+    AVoxelChunck* VoxelChunk = nullptr;
+
+    // Filet UNIQUE. Tout chemin de sortie qui n'a pas lance le job rend le slot ET
+    // debloque l'acteur. Sans ca, un chunk sorti tot reste bIsQueued=true a vie :
+    // ProcessDirtyChunks ne le re-enfilera plus jamais -> geometrie perimee permanente.
+    ON_SCOPE_EXIT
     {
-        CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
-        return;
-    }
-
-    FScopeLock Lock(&VoxelWorld->ChunckMutex);
-
-    FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(Coord);
-    if (!ChunkData || ChunkData->Voxels.Num() == 0)
-    {
-        UE_LOG(LogTemp, Error, TEXT("AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord) --> !ChunkData || ChunkData->Voxels.Num() == 0"));
-        CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
-        return;
-    }
-
-    if (ChunkData->bIsChunckGenerated == false)
-    {
-        UE_LOG(LogTemp, Error, TEXT("AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord) --> ChunkData->bIsChunckGenerated == false"));
-        CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
-        //PendingMeshToApply.Enqueue(ChunkData->Coord);
-        return;
-    }
-
-    int32 CapturedGenerationId = ChunkData->GenerationId;
-    int32 LOD = ChunkData->LOD;
-    const int32 SubSize = ChunkSize >> LOD;
-    AVoxelChunck* VoxelChunk = (ChunkData->LOD == 0) ? ChunkData->VoxelChunck.Get() : nullptr;
-    if (ChunkData->LOD == 0 && (!IsValid(VoxelChunk) || VoxelChunk->bIsBeingDestroyed))
-    {
-        //UE_LOG(LogTemp, Error, TEXT("AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord) --> ChunkData->LOD == 0 && (!IsValid(VoxelChunk) || VoxelChunk->bIsBeingDestroyed)"));
-        CurrentMeshJob--;
-        return;
-
-    }
-
-    if (ChunkData->Voxels.Num() != SubSize * SubSize * SubSize)
-    {
-        UE_LOG(LogTemp, Error, TEXT("GenerateAsyncGreedyMesh --> (%d,%d,%d) LOD %d : Voxels.Num()=%d, attendu %d"),
-            Coord.X, Coord.Y, Coord.Z, LOD, ChunkData->Voxels.Num(), SubSize * SubSize * SubSize);
-        CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
-        if (VoxelChunk) VoxelChunk->bIsQueued = false;
-        return;
-    }
-
-    // On capture les données nécessaires
-    const int32 PaddedSize = SubSize + 2;
-    TArray<FVoxelDataStructure> PaddedVoxels;
-    PaddedVoxels.SetNum(PaddedSize * PaddedSize * PaddedSize);
-
-    // Remplissage du padded (copie du chunk + voisins)
-    for (int z = 0; z < SubSize; ++z)
-        for (int y = 0; y < SubSize; ++y)
-            for (int x = 0; x < SubSize; ++x)
-            {
-                int srcIdx = x + y * SubSize + z * SubSize * SubSize;
-                int dstIdx = (x + 1) + (y + 1) * PaddedSize + (z + 1) * PaddedSize * PaddedSize;
-                PaddedVoxels[dstIdx] = ChunkData->Voxels[srcIdx];
-            }
-
-    // Copie des voisins (bords)
-    const FIntVector Neighbors[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
-    for (const FIntVector& Dir : Neighbors)
-    {
-        const FChunckDataStructure* Neighbor = VoxelWorld->Chuncks.Find(Coord + Dir);
-        if (!Neighbor || Neighbor->Voxels.Num() == 0)
-            continue;
-
-        for (int a = 0; a < SubSize; ++a)
+        if (!bDispatched)
         {
-            for (int b = 0; b < SubSize; ++b)
-            {
-                int nx = (Dir.X == -1) ? (SubSize - 1) : (Dir.X == 1) ? 0 : a;
-                int ny = (Dir.Y == -1) ? (SubSize - 1) : (Dir.Y == 1) ? 0 : (Dir.X != 0) ? a : b;
-                int nz = (Dir.Z == -1) ? (SubSize - 1) : (Dir.Z == 1) ? 0 : (Dir.X != 0) ? b : (Dir.Y != 0) ? b : 0;
+            CurrentMeshJob = FMath::Max(0, CurrentMeshJob - 1);
+            if (IsValid(VoxelChunk)) VoxelChunk->bIsQueued = false;
+        }
+    };
 
-                int px = (Dir.X == -1) ? 0 : (Dir.X == 1) ? PaddedSize - 1 : a + 1;
-                int py = (Dir.Y == -1) ? 0 : (Dir.Y == 1) ? PaddedSize - 1 : (Dir.X != 0) ? a + 1 : b + 1;
-                int pz = (Dir.Z == -1) ? 0 : (Dir.Z == 1) ? PaddedSize - 1 : (Dir.X != 0) ? b + 1 : (Dir.Y != 0) ? b + 1 : 1;
+    if (bIsShuttingDown || !IsValid(VoxelWorld)) return;
 
-                int srcIdx = nx + ny * SubSize + nz * SubSize * SubSize;
-                int dstIdx = px + py * PaddedSize + pz * PaddedSize * PaddedSize;
+    int32 CapturedGenerationId = 0;
+    TArray<FVoxelDataStructure> Padded;
 
-                if (Neighbor->Voxels.IsValidIndex(srcIdx))
-                    PaddedVoxels[dstIdx] = Neighbor->Voxels[srcIdx];
-            }
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+
+        FChunckDataStructure* ChunkData = VoxelWorld->Chuncks.Find(Coord);
+        if (!ChunkData) return;
+
+        // Ce chemin ne sert QUE le LOD0. Les LOD>0 passent par TryDispatchClusterMesh.
+        // (ProcessDirtyChunks filtre deja, cette garde rend l'invariant explicite.)
+        if (ChunkData->LOD != 0) return;
+        if (!ChunkData->bIsChunckGenerated) return;
+
+        VoxelChunk = ChunkData->VoxelChunck.Get();
+        ON_SCOPE_EXIT
+        if (!IsValid(VoxelChunk) || VoxelChunk->bIsBeingDestroyed)
+        {
+            VoxelChunk = nullptr;   // acteur mort : rien a debloquer
+            return;
+        }
+
+        CapturedGenerationId = ChunkData->GenerationId;
+
+        if (!BuildChunkPaddedVolumeNoLock(Coord, 0, ChunkSize, Padded))
+        {
+            UE_LOG(LogTemp, Error,
+                   TEXT("GenerateAsyncGreedyMesh (%d,%d,%d) : volume padde non construit"),
+                   Coord.X, Coord.Y, Coord.Z);
+            return;
         }
     }
-    int32 CapturedLOD = LOD;
-    TWeakObjectPtr<AVoxelChunck> WeakChunk(VoxelChunk);
+
+    TWeakObjectPtr<AVoxelChunck>   WeakChunk(VoxelChunk);
     TWeakObjectPtr<AChunckManager> WeakManager(this);
+    const int32 SX = ChunkSize;
+    const float EVS = VoxelSize;   // LOD0 -> Step = 1
+
+    bDispatched = true;   // a partir d'ici, c'est la tache async qui rend le slot
 
     Async(EAsyncExecution::ThreadPool,
-        [WeakManager, WeakChunk, PaddedVoxels = MoveTemp(PaddedVoxels), CapturedLOD, Coord, CapturedGenerationId, this]() mutable
+        [WeakManager, WeakChunk, Padded = MoveTemp(Padded), SX, EVS, Coord, CapturedGenerationId]() mutable
         {
-            if (!WeakManager.IsValid())
-                return;
+            AChunckManager* Mgr = WeakManager.Get();
+            if (!Mgr) return;
 
             FChunckMeshData MeshData;
-            WeakManager->GenerateGreedyMesh(MeshData, PaddedVoxels, Coord, CapturedLOD);
+            MeshData.ChunckCoord = Coord;
+
+            // Mask vide : IsMasked() renvoie false partout (IsValidIndex echoue).
+            // Aucune surcouche necessaire, c'est le comportement voulu pour un chunk seul.
+            static const TArray<uint8> EmptyMask;
+            Mgr->GenerateGreedyMeshVolume(MeshData, Padded, EmptyMask, SX, SX, SX, EVS);
 
             AsyncTask(ENamedThreads::GameThread,
-                [WeakManager, WeakChunk, MeshData = MoveTemp(MeshData), CapturedLOD, Coord, CapturedGenerationId]() mutable
+                [WeakManager, WeakChunk, MeshData = MoveTemp(MeshData), Coord, CapturedGenerationId]() mutable
                 {
                     AChunckManager* Manager = WeakManager.Get();
-                    ON_SCOPE_EXIT
+
                     {
                         if (Manager) Manager->CurrentMeshJob = FMath::Max(0, Manager->CurrentMeshJob - 1);
                         if (WeakChunk.IsValid()) WeakChunk->bIsQueued = false;
                     };
 
-                    if (!Manager || !Manager->VoxelWorld) return;
+                    if (!Manager || !IsValid(Manager->VoxelWorld)) return;
 
+                    // Obsolescence : GenerationId a bouge, OU le chunk est passe en cluster
+                    // pendant le vol (appliquer un mesh d'acteur le superposerait au cluster).
                     bool bStale = true;
                     {
                         FScopeLock Lock(&Manager->VoxelWorld->ChunckMutex);
-                        if (FChunckDataStructure* Data = Manager->VoxelWorld->Chuncks.Find(Coord))
-                            bStale = (Data->GenerationId != CapturedGenerationId);
+                        if (const FChunckDataStructure* Data = Manager->VoxelWorld->Chuncks.Find(Coord))
+                            bStale = (Data->GenerationId != CapturedGenerationId) || (Data->LOD != 0);
                     }
                     if (bStale) return;
 
-                    if (CapturedLOD == 0)
+                    if (WeakChunk.IsValid() && !WeakChunk->bIsBeingDestroyed)
                     {
-                        if (WeakChunk.IsValid() && !WeakChunk->bIsBeingDestroyed)
-                        {
-                            WeakChunk->ApplyMesh(MeshData);
-                            // À l'INTÉRIEUR de la garde : la notification ne vaut que
-                            // si le mesh a réellement été appliqué.
-                            Manager->NotifyDisplayApplied(Coord);
-                        }
-                    }
-                    else
-                    {
-                        FClusterGenResult R;
-                        R.LOD = CapturedLOD;
-                        R.MeshData = MeshData;
-                        R.MeshData.ChunckCoord = Coord;
-                        Manager->ClusterGenerationResult.Enqueue(R);
+                        WeakChunk->ApplyMesh(MeshData);
+                        // A l'INTERIEUR de la garde : la notification ne vaut que si
+                        // le mesh a reellement ete applique.
+                        Manager->NotifyDisplayApplied(Coord);
                     }
                 });
         });
@@ -766,10 +737,12 @@ int32 AChunckManager::GetNbChunkForLOD(int32 LOD) const
 
 bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
 {
-    const FIntVector CC(
-        FMath::FloorToInt((float)GX / ChunkSize),
-        FMath::FloorToInt((float)GY / ChunkSize),
-        FMath::FloorToInt((float)GZ / ChunkSize));
+    if (!VoxelWorld) return false;
+
+    const FIntVector CC(FloorDivInt(GX, ChunkSize),
+                        FloorDivInt(GY, ChunkSize),
+                        FloorDivInt(GZ, ChunkSize));
+
     const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
     if (!D || D->Voxels.Num() == 0) return false;
 
@@ -777,9 +750,80 @@ bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
     const int32 lx = (GX - CC.X * ChunkSize) >> D->LOD;
     const int32 ly = (GY - CC.Y * ChunkSize) >> D->LOD;
     const int32 lz = (GZ - CC.Z * ChunkSize) >> D->LOD;
+
     const int32 idx = lx + ly * SubSize + lz * SubSize * SubSize;
     if (!D->Voxels.IsValidIndex(idx)) return false;
     return D->Voxels[idx].Material.Id > 0;
+}
+
+bool AChunckManager::BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize,
+                                                  TArray<FVoxelDataStructure>& OutVolume)
+{
+    if (!VoxelWorld) return false;
+
+    const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(Coord);
+    if (!D) return false;
+
+    const int32 Expected = SubSize * SubSize * SubSize;
+    if (D->Voxels.Num() != Expected) return false;
+
+    const int32 PS = SubSize + 2;
+    OutVolume.Reset();
+    OutVolume.SetNumZeroed(PS * PS * PS);   // memset, PAS 2M appels de constructeur
+
+    // --- Interieur : X est contigu en memoire -> une seule Memcpy par ligne. ---
+    for (int32 z = 0; z < SubSize; ++z)
+        for (int32 y = 0; y < SubSize; ++y)
+        {
+            const int32 Src = y * SubSize + z * SubSize * SubSize;
+            const int32 Dst = 1 + (y + 1) * PS + (z + 1) * PS * PS;
+            FMemory::Memcpy(&OutVolume[Dst], &D->Voxels[Src],
+                            SubSize * sizeof(FVoxelDataStructure));
+        }
+
+    // --- Les 6 faces de padding, chacune lue a SON PROPRE LOD. ---
+    const int32 Step = 1 << LOD;
+    static const FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
+
+    for (const FIntVector& Dir : Dirs)
+    {
+        const FChunckDataStructure* N = VoxelWorld->Chuncks.Find(Coord + Dir);
+        if (!N || N->Voxels.Num() == 0) continue;               // absent -> traite comme de l'air
+
+        const int32 NLOD = N->LOD;
+        const int32 NSub = ChunkSize >> NLOD;
+        if (N->Voxels.Num() != NSub * NSub * NSub) continue;    // incoherent -> air, jamais de lecture hasardeuse
+
+        const int32 Axis = (Dir.X != 0) ? 0 : (Dir.Y != 0) ? 1 : 2;
+        const int32 A1 = (Axis + 1) % 3;
+        const int32 A2 = (Axis + 2) % 3;
+        const int32 Sign = (Axis == 0) ? Dir.X : (Axis == 1) ? Dir.Y : Dir.Z;
+
+        // Sur l'axe traverse : cellule -1 -> derniere couche du voisin, cellule SubSize -> premiere.
+        // (ChunkSize - Step) est la coordonnee locale-monde ; >> NLOD la snappe sur la grille du voisin.
+        const int32 NAxisIdx = (Sign < 0) ? ((ChunkSize - Step) >> NLOD) : 0;
+        const int32 PAxisIdx = (Sign < 0) ? 0 : (PS - 1);
+
+        for (int32 b = 0; b < SubSize; ++b)
+            for (int32 a = 0; a < SubSize; ++a)
+            {
+                int32 NI[3], PI[3];
+                NI[Axis] = NAxisIdx;
+                NI[A1]   = (a * Step) >> NLOD;   // notre grille -> monde -> grille du voisin
+                NI[A2]   = (b * Step) >> NLOD;
+
+                PI[Axis] = PAxisIdx;
+                PI[A1]   = a + 1;
+                PI[A2]   = b + 1;
+
+                const int32 SrcIdx = NI[0] + NI[1] * NSub + NI[2] * NSub * NSub;
+                if (!N->Voxels.IsValidIndex(SrcIdx)) continue;
+
+                OutVolume[PI[0] + PI[1] * PS + PI[2] * PS * PS] = N->Voxels[SrcIdx];
+            }
+    }
+
+    return true;
 }
 
 // Construit le volume sous-échantillonné + padding. Renvoie false si le cluster n'est pas prêt.
@@ -900,7 +944,7 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
 
 // Greedy mesh sur volume de dimensions arbitraires (données déjà downsamplées -> Step interne = 1)
 void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-    const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EVS)
+    const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EVS, const FVector& OriginOffset)
 {
     const int32 PX = SX + 2, PY = SY + 2, PZ = SZ + 2;
     const int32 Dims[3] = { SX, SY, SZ };
@@ -973,10 +1017,10 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
 
                         const FVector Normal = FVector(q[0], q[1], q[2]) * (float)CurrentMask.Normal;
                         const int32 S = OutMesh.Vertices.Num();
-                        OutMesh.Vertices.Add(FVector(V1[0], V1[1], V1[2]) * EVS);
-                        OutMesh.Vertices.Add(FVector(V2[0], V2[1], V2[2]) * EVS);
-                        OutMesh.Vertices.Add(FVector(V3[0], V3[1], V3[2]) * EVS);
-                        OutMesh.Vertices.Add(FVector(V4[0], V4[1], V4[2]) * EVS);
+                        OutMesh.Vertices.Add(FVector(V1[0], V1[1], V1[2]) * EVS + OriginOffset);
+                        OutMesh.Vertices.Add(FVector(V2[0], V2[1], V2[2]) * EVS + OriginOffset);
+                        OutMesh.Vertices.Add(FVector(V3[0], V3[1], V3[2]) * EVS + OriginOffset);
+                        OutMesh.Vertices.Add(FVector(V4[0], V4[1], V4[2]) * EVS + OriginOffset);
 
                         OutMesh.Triangles.Add(S + 0);
                         OutMesh.Triangles.Add(S + 2 + CurrentMask.Normal);
@@ -1199,7 +1243,7 @@ void AChunckManager::ProcessPendingClusters()
     ProcessTier(PendingClusterTier3, 3);
 }
 */
-
+/*
 void AChunckManager::GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD)
 {
     int32 Step = 1 << LOD;
@@ -1308,6 +1352,8 @@ void AChunckManager::GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<F
         }
     }
 }
+
+*/
 void AChunckManager::TrySafeSpawn()
 {
     APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
@@ -1355,7 +1401,7 @@ bool AChunckManager::CompareMask(const FMask& M1, const FMask& M2) const
 {
     return M1.Block == M2.Block && M1.Normal == M2.Normal;
 }
-
+/*
 bool AChunckManager::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize)
 {
 
@@ -1372,7 +1418,8 @@ bool AChunckManager::IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelD
 
     return LocalVoxels[index].Material.Id > 0;
 }
-
+*/
+/*
 void AChunckManager::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 Step)
 {
     const FVector Normal = FVector(AxisMask) * Mask.Normal * VoxelSize;
@@ -1415,6 +1462,7 @@ void AChunckManager::CreateQuad(const FMask& Mask, const FIntVector& AxisMask, i
 
     VertexCount += 4;
 }
+*/
 /*
 void AChunckManager::UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep)
 {
