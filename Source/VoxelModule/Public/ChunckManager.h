@@ -49,6 +49,8 @@ public:
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	//int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
+	bool BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize,
+                                                  TArray<FVoxelDataStructure>& OutVolume);
 
 	void GenerateAsyncGreedyMesh(FIntVector Coord);
 	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
@@ -91,7 +93,7 @@ public:
 	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
 		TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ);
 	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
+		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize, const FVector& OriginOffset = FVector::ZeroVector);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
 
