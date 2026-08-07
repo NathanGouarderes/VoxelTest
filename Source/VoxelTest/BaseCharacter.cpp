@@ -5,13 +5,15 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "KiCharacterMovement.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 
 // Sets default values
-ABaseCharacter::ABaseCharacter()
+ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer) : Super (ObjectInitializer.SetDefaultSubobjectClass<UKiCharacterMovement>(
+	ACharacter::CharacterMovementComponentName))
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -22,6 +24,7 @@ ABaseCharacter::ABaseCharacter()
 	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
+	WebComponent = CreateDefaultSubobject<UKiWebComponent>(TEXT("KiWeb"));
 }
 
 // Called when the game starts or when spawned
@@ -51,6 +54,11 @@ void ABaseCharacter::Tick(float DeltaTime)
 
 }
 
+UKiCharacterMovement* ABaseCharacter::GetKiMovement() const
+{
+	return CastChecked<UKiCharacterMovement>(GetCharacterMovement());
+}
+
 // Called to bind functionality to input
 void ABaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
@@ -61,6 +69,31 @@ void ABaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 	if (MoveAction) EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Move);
 	if (LookAction) EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &ABaseCharacter::Look);
+	if (FireKiWebLeftArmAction)
+	{
+		EIC->BindAction(FireKiWebLeftArmAction, ETriggerEvent::Started, this, &ABaseCharacter::OnFireKiWebLeft);
+		EIC->BindAction(FireKiWebLeftArmAction, ETriggerEvent::Completed, this, &ABaseCharacter::OnReleaseKiWebLeft);
+		EIC->BindAction(FireKiWebLeftArmAction, ETriggerEvent::Canceled, this, &ABaseCharacter::OnReleaseKiWebLeft);
+	}
+}
+
+void ABaseCharacter::OnFireKiWeb(EKiArm Arm)
+{
+	if (!WebComponent || !Controller)
+	{
+		return;
+	}
+
+	FVector ViewLoc;
+	FRotator ViewRot;
+	Controller->GetPlayerViewPoint(ViewLoc, ViewRot);
+
+}
+
+void ABaseCharacter::OnReleaseKiWeb(EKiArm Arm)
+{
+	UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::Move --> %d"), Arm);
+
 }
 
 void ABaseCharacter::Move(const FInputActionValue& Value)
@@ -83,4 +116,57 @@ void ABaseCharacter::Look(const FInputActionValue& Value)
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(Axis.Y);
 }
+
+UEnhancedInputLocalPlayerSubsystem* ABaseCharacter::GetInputSubsystem() const 
+{
+	const APlayerController* PC = Cast<APlayerController>(Controller);
+	return PC ? ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()) : nullptr;
+}
+
+void ABaseCharacter::SetKiWebSkillActive(bool bActive)
+{
+	if (bIsKiWebSkillActive == bActive || !KiWebMappingContext)
+	{
+		return;
+	}
+	
+	bIsKiWebSkillActive = bActive;
+	if (auto* Subsystem = GetInputSubsystem())
+	{
+		if (bActive)
+		{
+			Subsystem->AddMappingContext(KiWebMappingContext, 1);
+		}
+		else
+		{
+			Subsystem->RemoveMappingContext(KiWebMappingContext);
+		}
+	}
+
+	if (!bActive && WebComponent)
+	{
+		//WebComponent->ReleaseAll();
+	}
+}
+
+void ABaseCharacter::OnFireKiWebLeft()
+{
+	OnFireKiWeb(EKiArm::Left);
+}
+
+void ABaseCharacter::OnFireKiWebRight()
+{
+	OnFireKiWeb(EKiArm::Right);
+}
+
+void ABaseCharacter::OnReleaseKiWebLeft()
+{
+	OnReleaseKiWeb(EKiArm::Left);
+}
+
+void ABaseCharacter::OnReleaseKiWebRight()
+{
+	OnReleaseKiWeb(EKiArm::Right);
+}
+
 

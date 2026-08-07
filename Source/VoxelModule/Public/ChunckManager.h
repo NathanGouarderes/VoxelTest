@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -22,6 +20,19 @@ class ChunckGenWorker;
 class AVoxelWorld;
 class AClusterChunk;
 
+struct FPendingMeshRequest { FIntVector Coord; uint64 BrickMask = 0; };
+
+// Charge utile d'un job de mesh par briques.
+struct FBrickJobPayload
+{
+	FIntVector             Coord;
+	int32                  MeshVersion = 0;
+	uint64                 DirtyMask = 0;
+	TArray<int32>          DirtyIndices;
+	TArray<FVoxelDataStructure> DirtyPadded;   // plat : DirtyIndices.Num() * PB^3
+	TArray<FBrickQuadsRef> Bricks;             // NumBricks, nulles pour les dirty
+};
+
 UCLASS()
 class VOXELMODULE_API AChunckManager : public AActor
 {
@@ -41,7 +52,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	void RegisterDirtyChunk(FIntVector Coord);
 	void SpawnChunk(FIntVector Coord, int32 LOD, int32 GenerationId);
-	void UpdateVisibleChunks(const TSet<FIntVector>& ChunksToKeep);
 	void GetAllPlayerChunks(TSet<FIntVector>& GlobalChunksToKeep);
 	FIntVector GetPlayerChunck(const FVector& PlayerPos) const;
 	void GenerateTerrain(FChunckDataStructure& Data, FIntVector Coord);
@@ -50,7 +60,7 @@ public:
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	//int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
 
-	void GenerateAsyncGreedyMesh(FIntVector Coord);
+	void GenerateAsyncGreedyMesh(FIntVector Coord/*, uint64 RequestedMask*/);
 	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
 	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
@@ -76,8 +86,12 @@ public:
 	bool UpdatePlayerChunkState();
 
 
-	void InvalidateCluster(FIntVector ClusterCoord, int32 LOD);
 	bool IsChunkGuaranteedEmpty(const FIntVector& Coord) const;
+
+	void ProcessLODCommits();
+	void ProcessLODWatchdog();
+	void NotifyDisplayApplied(FIntVector Coord);
+	void RequestClusterRebuild(FIntVector ClusterCoord, int32 Tier);
 
 	UFUNCTION(Exec)
 	void NukeClusters();
@@ -88,9 +102,25 @@ public:
 	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
 		TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ);
 	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize);
+		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize /*,const FVector& OriginOffset = FVector::ZeroVector*/);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
+	bool BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize, TArray<FVoxelDataStructure>& OutVolume);
+
+
+
+	//FORCEINLINE int32  GetBricksPerAxis() const { return ChunkSize / BrickSize; }
+	//FORCEINLINE int32  GetNumBricks()     const { const int32 B = GetBricksPerAxis(); return B * B * B; }
+	//uint64  GetFullBrickMask() const;
+	//uint64  GetFaceBrickMask(const FIntVector& Dir) const;
+	//void    MarkChunkDirty(FIntVector Coord, uint64 BrickMask);
+	//void    RegisterDirtyRegion(FIntVector Coord, FIntVector LocalMin, FIntVector LocalMax);
+
+	//bool BuildBrickPaddedVolumeNoLock(const FChunckDataStructure& D, FIntVector Coord,
+	//	int32 BrickIndex, FVoxelDataStructure* OutPadded);
+
+	//void GenerateGreedyQuads(TArray<FPackedQuad>& OutQuads,TArrayView<const FVoxelDataStructure> Pad, const TArray<uint8>& MaskVol,int32 SX, int32 SY, int32 SZ);
+	//void ExpandQuadsToMesh(FChunckMeshData& OutMesh, const TArray<FPackedQuad>& Quads, float EVS, const FVector& OriginOffset);
 
 	TQueue<FIntVector> PendingUnloadQueue;
 
@@ -129,6 +159,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Voxel | Performance")
 	int32 MaxClusterDispatchPerFrame = 64;
 
+	UPROPERTY(EditAnywhere, Category = "Voxel")
+	int32 BrickSize = 32; //32 voxels en LOD0
+
+
+	//TMap<FIntVector, uint64>       DirtyChuncks;
+	//TQueue<FPendingMeshRequest>    PendingMeshToApply;
+
 	TSet<FIntVector> DirtyChuncks;
 	TSet<FIntVector> PendingLODMesh;
 	UPROPERTY(EditAnywhere, Category = "Voxel")
@@ -143,14 +180,14 @@ public:
 	int ChunkSize = 128;//32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 40;
+	int32 HorizontalViewDistance = 10;
 	int32 VerticalViewDistance = 10;
 
 	FTimerHandle SafeSpawnTimer;
 	void TrySafeSpawn();
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 4000.0f, 4500.0f, 7000.0f, 144000.0f/*, 50000.0f, 150000.0f*/ };
+	TArray<float> LODDistances = { 10000.0f, 4500.0f, 7000.0f, 144000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -216,6 +253,16 @@ public:
 	float CaveThreshold;      // plus bas = plus de grottes
 	UPROPERTY(EditAnywhere)
 	int   SeaLevel;         // niveau de la mer (lacs + océan)
+
+	int32 NextGenerationId = 1;
+	TSet<FIntVector> PendingCommitSet;
+	TSet<FIntVector> ChunksAwaitingMesh;
+
+	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+	float LODSwapWatchdogSeconds = 5.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+	int32 MaxConcurrentLODTransitions = 512;
 
 
 	std::atomic<bool> bIsShuttingDown;
