@@ -6,7 +6,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "FChunckDataStructure.h"
 #include "VoxelWorld.h"
-#include "FRealtimeMeshCollisionConfiguration.h"
 #include "Interface/Core/RealtimeMeshCollision.h"
 #include "RealtimeMeshSimple.h"
 #include "RealtimeMeshComponent.h"
