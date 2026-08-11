@@ -168,7 +168,7 @@ public:
 	void TrySafeSpawn();
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 10000.0f, 4500.0f, 7000.0f, 144000.0f };
+	TArray<float> LODDistances = { 5000, 40000, 64000, 144000 };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
