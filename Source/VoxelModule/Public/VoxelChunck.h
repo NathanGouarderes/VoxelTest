@@ -4,20 +4,15 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
 #include "EVoxelAxis.h"
+#include "RealtimeMeshSimple.h"
 #include "Math/IntVector.h"
 #include "FChunckMeshData.h"
 #include "FVoxelDataStructure.h"
+#include "FMask.h"
 #include "VoxelChunck.generated.h"
 
 class AChunckManager;
-
-struct FMask
-{
-	int8 Block = 0;
-	int8 Normal = 0;
-};
 
 
 UCLASS()
@@ -37,9 +32,9 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;	
 	float GetVoxelSize();
-	//void GenerateFacedMesh();
-	void GenerateAsyncGreedyMesh(int32 InLOD = 0);
-	void ApplyMesh(const FChunckMeshData& MeshData);
+	void ApplyMesh(FChunckMeshData&& MeshData);
+
+
 
 	void RemoveVoxel(int X, int Y, int Z);
 	bool IsVoxelSolid(int x, int y, int z);
@@ -52,15 +47,24 @@ public:
 
 	int32 CurrentLOD;
 	bool bIsDirty;
-	int8 Size;
-	UPROPERTY(VisibleAnywhere) TObjectPtr<URealtimeMeshComponent> RealtimeMeshComponent;
-  	UPROPERTY(Transient) TObjectPtr<URealtimeMeshSimple>    RealtimeMeshSimple;
+	int32 Size;
 	float VoxelSize;
 	FChunckMeshData ChunckDataMesh;
+	UPROPERTY()
 	AChunckManager* ChunckManager;
 	FIntVector Coord;
 	bool bIsQueued;
 	bool bIsBeingDestroyed = false;
+	UPROPERTY(VisibleAnywhere, Category = "Voxel")
+	TObjectPtr<URealtimeMeshComponent> RealtimeMeshComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URealtimeMeshSimple> RealtimeMeshSimple;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Voxel")
+	TObjectPtr<UMaterialInterface> TerrainMaterial;
+
+	bool bHasSectionGroup = false;
 	//TArray<FVoxelDataStructure> VoxelData;
 
 
