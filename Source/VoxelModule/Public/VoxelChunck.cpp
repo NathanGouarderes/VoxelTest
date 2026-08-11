@@ -6,6 +6,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "FChunckDataStructure.h"
 #include "VoxelWorld.h"
+#include "FRealtimeMeshCollisionConfiguration.h"
 #include "Interface/Core/RealtimeMeshCollision.h"
 #include "RealtimeMeshSimple.h"
 #include "RealtimeMeshComponent.h"
@@ -31,10 +32,14 @@ AVoxelChunck::AVoxelChunck()
 void AVoxelChunck::BeginPlay()
 {
 	Super::BeginPlay();
+	FRealtimeMeshCollisionConfiguration CollisionConfiguration;
+	CollisionConfiguration.bUseComplexAsSimpleCollision = true;
+	CollisionConfig.bUseAsyncCook = true;
 	RealtimeMeshSimple = RealtimeMeshComponent->InitializeRealtimeMesh<URealtimeMeshSimple>();
 	if (RealtimeMeshSimple)
 	{
 		RealtimeMeshSimple->SetupMaterialSlot(0, TEXT("Terrain"), TerrainMaterial);
+		RealtimeMeshSimple->SetCollisionConfig(CollisionConfig);
 	}
 
 }
@@ -124,8 +129,7 @@ void AVoxelChunck::ApplyMesh(FChunckMeshData&& MeshData)
 	}
 
 	// Cle deterministe : reconstruite a chaque appel, jamais stockee en membre.
-	const FRealtimeMeshSectionGroupKey GroupKey =
-		FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Chunk"));
+	const FRealtimeMeshSectionGroupKey GroupKey = FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Chunk"));
 
 	// Chunk sans geometrie : on retire le groupe au lieu de pousser un StreamSet vide.
 	// RMC 5.3.2 a un crash connu sur le commit d'un stream set vide (corrige en 5.4).
@@ -145,6 +149,8 @@ void AVoxelChunck::ApplyMesh(FChunckMeshData&& MeshData)
 	{
 		// Premier mesh : cree le groupe et les sections associees.
 		RealtimeMeshSimple->CreateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+		const FRealtimeMeshSectionKey SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
+		RealtimeMeshSimple->UpdateSectionConfig(SectionKey, FRealtimeMeshSectionConfig(), true);
 		bHasSectionGroup = true;
 	}
 	else
