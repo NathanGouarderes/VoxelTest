@@ -6,6 +6,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "FChunckDataStructure.h"
 #include "VoxelWorld.h"
+#include "Interface/Core/RealtimeMeshCollision.h"
+#include "RealtimeMeshSimple.h"
+#include "RealtimeMeshComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
 // Sets default values
@@ -28,7 +31,12 @@ AVoxelChunck::AVoxelChunck()
 void AVoxelChunck::BeginPlay()
 {
 	Super::BeginPlay();
-    RealtimeMeshSimple = RealtimeMeshComponent->InitializeRealtimeMesh<URealtimeMeshSimple>();
+	RealtimeMeshSimple = RealtimeMeshComponent->InitializeRealtimeMesh<URealtimeMeshSimple>();
+	if (RealtimeMeshSimple)
+	{
+		RealtimeMeshSimple->SetupMaterialSlot(0, TEXT("Terrain"), TerrainMaterial);
+	}
+
 }
 
 
@@ -43,80 +51,6 @@ void AVoxelChunck::SetChunckManager(AChunckManager* Manager)
 	ChunckManager = Manager;
 }
 
-void AVoxelChunck::ApplyMesh(const FChunckMeshData& MeshData)
-{
-	// 1. Vérification de base du composant
-	if (!ProceduralMeshComponent || bIsBeingDestroyed)
-	{
-		return;
-	}
-
-	// 2. Sécurité : Nettoyage si mesh vide
-	if (MeshData.Vertices.Num() == 0)
-	{
-		ProceduralMeshComponent->ClearMeshSection(0);
-		bIsDirty = true; // On marque comme sale car rien n'est affiché
-		return;
-	}
-
-	// 3. Sécurité Renderer : On s'assure que le monde est valide
-	UWorld* World = GetWorld();
-	if (!World) return;
-
-	// 4. Calcul de collision (simplifié)
-	// Au lieu de chercher le PlayerController ici, utilise une variable 
-	// ou passe l'info depuis le Manager si possible. 
-	// Sinon, garde cette logique mais avec IsValid()
-	bool bCreateCollision = false;
-	if (APlayerController* PC = World->GetFirstPlayerController())
-	{
-		if (APawn* Pawn = PC->GetPawn())
-		{
-			// Note: Utilise ta variable membre 'Coord' et les constantes 
-			// pour éviter de toucher au ChunckManager
-			float ChunkScale = 100.0f; // Remplace par une valeur fixe ou membre
-			if (ChunckManager) ChunkScale = ChunckManager->VoxelSize;
-
-			FVector ChunkWorldPos = GetActorLocation();
-			bCreateCollision = FVector::DistSquared(ChunkWorldPos, Pawn->GetActorLocation()) < FMath::Square(6000.0f);
-		}
-	}
-
-	// 5. APPLICATION CRITIQUE	
-	/*
-	if (ProceduralMeshComponent->GetNumSections() > 0)
-	{
-		ProceduralMeshComponent->UpdateMeshSection(
-			0,
-			MeshData.Vertices,
-			MeshData.Normals,
-			MeshData.UVs,
-			MeshData.VertexColors,
-			MeshData.Tangents
-		);
-	}
-	else
-	{
-	*/
-	
-		ProceduralMeshComponent->CreateMeshSection(
-			0,
-			MeshData.Vertices,
-			MeshData.Triangles,
-			MeshData.Normals,
-			MeshData.UVs,
-			MeshData.VertexColors,
-			MeshData.Tangents,
-			bCreateCollision
-		);
-	//}
-
-	ProceduralMeshComponent->SetMeshSectionVisible(0, true);
-
-	// 6. Finalisation
-	bIsDirty = false;
-	bIsQueued = false;
-}
 
 float AVoxelChunck::GetVoxelSize()
 {
@@ -180,6 +114,48 @@ bool AVoxelChunck::IsVoxelSolid(int x, int y, int z)
 	//}
 }
 
+void AVoxelChunck::ApplyMesh(FChunckMeshData&& MeshData)
+{
+	// Le URealtimeMeshSimple est cree au BeginPlay. Sans lui, rien a alimenter.
+	if (!RealtimeMeshSimple || bIsBeingDestroyed)
+	{
+		bIsQueued = false;
+		return;
+	}
+
+	// Cle deterministe : reconstruite a chaque appel, jamais stockee en membre.
+	const FRealtimeMeshSectionGroupKey GroupKey =
+		FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Chunk"));
+
+	// Chunk sans geometrie : on retire le groupe au lieu de pousser un StreamSet vide.
+	// RMC 5.3.2 a un crash connu sur le commit d'un stream set vide (corrige en 5.4).
+	if (MeshData.bIsEmpty)
+	{
+		if (bHasSectionGroup)
+		{
+			RealtimeMeshSimple->RemoveSectionGroup(GroupKey);
+			bHasSectionGroup = false;
+		}
+		bIsDirty = false;
+		bIsQueued = false;
+		return;
+	}
+
+	if (!bHasSectionGroup)
+	{
+		// Premier mesh : cree le groupe et les sections associees.
+		RealtimeMeshSimple->CreateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+		bHasSectionGroup = true;
+	}
+	else
+	{
+		// Chemin rapide : reutilise l'infrastructure existante au lieu de la recreer.
+		RealtimeMeshSimple->UpdateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+	}
+
+	bIsDirty = false;
+	bIsQueued = false;
+}
 
 void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 {
