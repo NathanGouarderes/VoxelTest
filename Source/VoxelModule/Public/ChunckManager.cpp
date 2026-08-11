@@ -1,22 +1,22 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-
+﻿
 #include "ChunckManager.h"
 #include "FChunckDataStructure.h"
 #include "GameFramework/GameModeBase.h"  
 #include "Kismet/GameplayStatics.h"
 #include "HAL/PlatformMisc.h"
+#include "RealtimeMeshComponent.h"
+#include "RealtimeMeshSimple.h"
+#include "Interface/Core/RealtimeMeshBuilder.h"
 #include "FChunkGenResult.h"
 #include "ChunckGenWorker.h"
 #include "VoxelWorld.h"
-
-#include "StaticMeshAttributes.h"
 
 static FORCEINLINE int32 FloorDivInt(int32 A, int32 B)
 {
     const int32 Q = A / B;
     return (A % B != 0 && ((A < 0) != (B < 0))) ? Q - 1 : Q;
 }
+#define PI (3.1415926535897932f)
 
 // Le padding est construit par Memcpy : la structure doit rester copiable octet a octet.
 static_assert(TIsTriviallyCopyConstructible<FVoxelDataStructure>::Value,
@@ -47,6 +47,7 @@ void AChunckManager::BeginPlay()
 {
     Super::BeginPlay();
     GetWorld()->GetTimerManager().SetTimer(SafeSpawnTimer, this, &AChunckManager::TrySafeSpawn, 0.2f, true);
+
     {
         TArray<AActor*> Mgrs;
         UGameplayStatics::GetAllActorsOfClass(GetWorld(), AChunckManager::StaticClass(), Mgrs);
@@ -172,6 +173,7 @@ void AChunckManager::Tick(float DeltaTime)
     ProcessLODWatchdog();          // ← NOUVEAU : filet anti-superposition permanente
     ProcessUnloadQueue();
 
+    /*
     UE_LOG(LogTemp, Warning, TEXT("GEN RESULTS=%d DIRTY=%d PENDING_MESH=%d T1=%d T2=%d T3=%d"),
         PendingClusterGenCount,
         DirtyChuncks.Num(),
@@ -183,6 +185,7 @@ void AChunckManager::Tick(float DeltaTime)
         TEXT("CurrentMeshJob=%d/%d"),
         CurrentMeshJob,
         MaxMeshJob);
+        */
 
 }
 
@@ -558,7 +561,8 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
         if (!ChunkData->bIsChunckGenerated) return;
 
         VoxelChunk = ChunkData->VoxelChunck.Get();
-        ON_SCOPE_EXIT
+        
+        
         if (!IsValid(VoxelChunk) || VoxelChunk->bIsBeingDestroyed)
         {
             VoxelChunk = nullptr;   // acteur mort : rien a debloquer
@@ -574,6 +578,7 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
                    Coord.X, Coord.Y, Coord.Z);
             return;
         }
+        
     }
 
     TWeakObjectPtr<AVoxelChunck>   WeakChunk(VoxelChunk);
@@ -621,9 +626,9 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
 
                     if (WeakChunk.IsValid() && !WeakChunk->bIsBeingDestroyed)
                     {
-                        WeakChunk->ApplyMesh(MeshData);
                         // A l'INTERIEUR de la garde : la notification ne vaut que si
                         // le mesh a reellement ete applique.
+                        WeakChunk->ApplyMesh(MoveTemp(MeshData));
                         Manager->NotifyDisplayApplied(Coord);
                     }
                 });
@@ -707,19 +712,19 @@ bool AChunckManager::BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, i
         for (int32 b = 0; b < SubSize; ++b)
             for (int32 a = 0; a < SubSize; ++a)
             {
-                int32 NI[3], PI[3];
+                int32 NI[3], PadI[3];
                 NI[Axis] = NAxisIdx;
                 NI[A1]   = (a * Step) >> NLOD;   // notre grille -> monde -> grille du voisin
                 NI[A2]   = (b * Step) >> NLOD;
 
-                PI[Axis] = PAxisIdx;
-                PI[A1]   = a + 1;
-                PI[A2]   = b + 1;
+                PadI[Axis] = PAxisIdx;
+                PadI[A1]   = a + 1;
+                PadI[A2]   = b + 1;
 
                 const int32 SrcIdx = NI[0] + NI[1] * NSub + NI[2] * NSub * NSub;
                 if (!N->Voxels.IsValidIndex(SrcIdx)) continue;
 
-                OutVolume[PI[0] + PI[1] * PS + PI[2] * PS * PS] = N->Voxels[SrcIdx];
+                OutVolume[PadI[0] + PadI[1] * PS + PadI[2] * PS * PS] = N->Voxels[SrcIdx];
             }
     }
 
@@ -850,6 +855,7 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
     TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(OutMesh.Streams);
     Builder.EnableTangents();
     Builder.EnableTexCoords();
+    int32 QuadCount = 0;
     const int32 PX = SX + 2, PY = SY + 2, PZ = SZ + 2;
     const int32 Dims[3] = { SX, SY, SZ };
 
@@ -932,7 +938,7 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                             .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(0.f, H));
                         Idx[3] = Builder.AddVertex(FVector3f(V4[0], V4[1], V4[2]) * EVS + OriginOffset)
                             .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(W, H));
-                        
+
                         int32 Dir = CurrentMask.Normal;   // ±1
                         Builder.AddTriangle(Idx[0], Idx[2 + Dir], Idx[2 - Dir]);
                         Builder.AddTriangle(Idx[3], Idx[1 - Dir], Idx[1 + Dir]);
@@ -942,10 +948,12 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                                 Mask[N + k + l * Dims[A1]] = FMask{ 0, 0 };
 
                         i += W; N += W;
+                        QuadCount++;
                     }
                     else { ++i; ++N; }
                 }
             }
+            OutMesh.bIsEmpty = (QuadCount == 0);
         }
     }
 }
@@ -989,7 +997,7 @@ bool AChunckManager::TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD)
 
                     if (VMap.FindRef(ClusterCoord) == MyVersion)
                     {
-                        M->ApplyClusterVolumeMesh(ClusterCoord, LOD, Mesh);
+                        M->ApplyClusterVolumeMesh(ClusterCoord, LOD, MoveTemp(Mesh));
                     }
                     else
                     {
@@ -1004,10 +1012,15 @@ bool AChunckManager::TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD)
     return true;
 }
 
-void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& Mesh)
+void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& MeshData)
 {
-    TMap<FIntVector, TObjectPtr<URealtimeMeshComponent>>* Pool =
+    TMap<FIntVector, URealtimeMeshComponent*>* Pool =
         (LOD == 1) ? &ClusterPoolTier1 : (LOD == 2) ? &ClusterPoolTier2 : &ClusterPoolTier3;
+
+    // Create et Update ne sont pas interchangeables, et l'existence du composant ne
+    // dit PAS si un groupe existe : un mesh vide le retire sans detruire le composant.
+    TSet<FIntVector>* HasGroup =
+        (LOD == 1) ? &ClusterHasGroupTier1 : (LOD == 2) ? &ClusterHasGroupTier2 : &ClusterHasGroupTier3;
 
     const int32 NbChunk = GetNbChunkForLOD(LOD);
     const float ClusterWorldSize = (float)NbChunk * ChunkSize * VoxelSize;
@@ -1016,215 +1029,92 @@ void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, 
         ClusterCoord.Y * ClusterWorldSize,
         ClusterCoord.Z * (float)ChunkSize * VoxelSize);
 
-    // RÉUTILISATION du composant existant. Sans ce Find, chaque apply empile
-    // un composant orphelin toujours rendu -> mesh fantôme permanent.
-    URealtimeMeshComponent* RMC = nullptr;
-    if (UStaticMeshComponent** Found = Pool->Find(ClusterCoord)) RMC = *Found;
-    if (!RMC)
-    {
-        RMC = NewObject<URealtimeMeshComponent>(this);
-        // Mobility AVANT RegisterComponent : un composant Static déjà enregistré
-        // ne peut plus être déplacé -> le cluster resterait planté à l'origine.
-        RMC->SetMobility(EComponentMobility::Movable);
-        RMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);   // clusters LOD>0 = visuel seul
-        RMC->bVisibleInRayTracing = false;                          // évite les reconstructions de SBT
-        RMC->SetCastShadow(false);                                  // évite les invalidations VSM
-        RMC->RegisterComponent();
-        URealtimeMeshSimple* RealtimeMeshSimple = NewObject<URealtimeMeshSimple>(this);
-        RMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
-        RMC->SetWorldLocation(ClusterOrigin);
-        Pool->Add(ClusterCoord, RMC);
-    }
+    const FRealtimeMeshSectionGroupKey GroupKey =
+        FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Cluster"));
 
-    // Les chunks de cette empreinte qui attendaient leur nouvelle représentation
-    // viennent de l'obtenir : leur ancienne peut être libérée. DOIT être appelé sur
-    // TOUS les chemins de sortie, mesh vide inclus.
+    // Les chunks de cette empreinte qui attendaient leur nouvelle representation
+    // viennent de l'obtenir. DOIT etre appele sur TOUS les chemins de sortie.
     auto NotifyFootprint = [&]()
-    {
-        if (ChunksAwaitingMesh.Num() == 0) return;
-        TArray<FIntVector> Applied;
-        for (int32 cx = 0; cx < NbChunk; ++cx)
-            for (int32 cy = 0; cy < NbChunk; ++cy)
-            {
-                const FIntVector C(ClusterCoord.X * NbChunk + cx,
-                                   ClusterCoord.Y * NbChunk + cy, ClusterCoord.Z);
-                if (ChunksAwaitingMesh.Contains(C)) Applied.Add(C);
-            }
-        // Copie avant itération : NotifyDisplayApplied modifie ChunksAwaitingMesh.
-        for (const FIntVector& C : Applied) NotifyDisplayApplied(C);
-    };
+        {
+            if (ChunksAwaitingMesh.Num() == 0) return;
+            TArray<FIntVector> Applied;
+            for (int32 cx = 0; cx < NbChunk; ++cx)
+                for (int32 cy = 0; cy < NbChunk; ++cy)
+                {
+                    const FIntVector C(ClusterCoord.X * NbChunk + cx,
+                        ClusterCoord.Y * NbChunk + cy, ClusterCoord.Z);
+                    if (ChunksAwaitingMesh.Contains(C)) Applied.Add(C);
+                }
+            // Copie avant iteration : NotifyDisplayApplied modifie ChunksAwaitingMesh.
+            for (const FIntVector& C : Applied) NotifyDisplayApplied(C);
+        };
 
-    if (Mesh.bIsEmpty || Mesh.Triangles.Num() < 3)
+    URealtimeMeshComponent* RMC = nullptr;
+    if (URealtimeMeshComponent** Found = Pool->Find(ClusterCoord)) RMC = *Found;
+
+    // Rien a afficher et rien d'existant : ne cree pas un composant pour du vide.
+    if (MeshData.bIsEmpty && !RMC)
     {
-        RMC->RemoveSectionGroup(GroupKey);
         NotifyFootprint();
         return;
     }
 
-    TArray<FVertexInstanceID> InstanceIDs;
-    InstanceIDs.Reserve(NumVerts);
-    for (int32 i = 0; i < NumVerts; ++i)
+    if (!RMC)
     {
-        const FVertexID VID = MeshDescription.CreateVertex();
-        Positions[VID] = FVector3f(Mesh.Vertices[i]);
+        RMC = NewObject<URealtimeMeshComponent>(this);
+        // Mobility AVANT RegisterComponent : un composant Static deja enregistre
+        // ne peut plus etre deplace -> le cluster resterait plante a l'origine.
+        RMC->SetMobility(EComponentMobility::Movable);
+        RMC->SetCollisionEnabled(ECollisionEnabled::NoCollision);   // clusters LOD>0 = visuel seul
+        RMC->bVisibleInRayTracing = false;                          // evite les reconstructions de SBT
+        RMC->SetCastShadow(false);                                  // evite les invalidations VSM
+        RMC->RegisterComponent();
+        RMC->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepWorldTransform);
+        RMC->SetWorldLocation(ClusterOrigin);
 
-        const FVertexInstanceID VIID = MeshDescription.CreateVertexInstance(VID);
-        // CreateQuad produit des normales de longueur VoxelSize -> normaliser.
-        if (Mesh.Normals.IsValidIndex(i))
-            Normals[VIID] = FVector3f(Mesh.Normals[i].GetSafeNormal());
-        if (Mesh.UVs.IsValidIndex(i))
-            UVs.Set(VIID, 0, FVector2f(Mesh.UVs[i]));
+        // Le composant fabrique et possede son mesh. Un NewObject<URealtimeMeshSimple>
+        // produirait un objet orphelin que le composant ignorerait.
+        if (URealtimeMeshSimple* NewMesh = RMC->InitializeRealtimeMesh<URealtimeMeshSimple>())
+        {
+            NewMesh->SetupMaterialSlot(0, TEXT("Cluster"), ClusterMaterial);
+        }
 
-        InstanceIDs.Add(VIID);
+        Pool->Add(ClusterCoord, RMC);
     }
 
-    for (int32 t = 0; t + 2 < Mesh.Triangles.Num(); t += 3)
+    URealtimeMeshSimple* ClusterMesh = Cast<URealtimeMeshSimple>(RMC->GetRealtimeMesh());
+    if (!ClusterMesh)
     {
-        const int32 I0 = Mesh.Triangles[t], I1 = Mesh.Triangles[t + 1], I2 = Mesh.Triangles[t + 2];
-        if (!InstanceIDs.IsValidIndex(I0) || !InstanceIDs.IsValidIndex(I1) || !InstanceIDs.IsValidIndex(I2))
-            continue;
-        MeshDescription.CreateTriangle(PolyGroup, { InstanceIDs[I0], InstanceIDs[I1], InstanceIDs[I2] });
+        NotifyFootprint();
+        return;
     }
 
-    // --- Build ---
-    // Réutilisation du UStaticMesh existant : sinon chaque apply en crée un neuf
-    // et l'ancien devient déchet -> le compte d'UObjects explose et les passes de
-    // GC deviennent des freezes de plusieurs secondes.
-     Mesh->Mesh->UpdateSectionGroup(GroupKey, MoveTemp(Data.Streams));
+    // Cluster devenu vide : on retire le groupe plutot que de pousser un StreamSet vide
+    // (crash connu en RMC 5.3.2). Le composant reste dans le pool, pret a resservir.
+    if (MeshData.bIsEmpty)
+    {
+        if (HasGroup->Contains(ClusterCoord))
+        {
+            ClusterMesh->RemoveSectionGroup(GroupKey);
+            HasGroup->Remove(ClusterCoord);
+        }
+        NotifyFootprint();
+        return;
+    }
+
+    if (!HasGroup->Contains(ClusterCoord))
+    {
+        ClusterMesh->CreateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+        HasGroup->Add(ClusterCoord);
+    }
+    else
+    {
+        ClusterMesh->UpdateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+    }
+
     NotifyFootprint();
 }
-/*
-void AChunckManager::ProcessPendingClusters()
-{
-    if (!VoxelWorld) return;
-    int32 Dispatched = 0;
 
-    auto ProcessTier = [&](TSet<FIntVector>& Pending, int32 LOD)
-        {
-            if (Pending.Num() == 0) return;
-            for (const FIntVector& CC : Pending.Array())
-            {
-                if (Dispatched >= MaxClusterDispatchPerFrame || CurrentMeshJob >= MaxMeshJob) return;
-                if (TryDispatchClusterMesh(CC, LOD)) { Pending.Remove(CC); ++Dispatched; }
-            }
-        };
-
-    ProcessTier(PendingClusterTier1, 1);
-    ProcessTier(PendingClusterTier2, 2);
-    ProcessTier(PendingClusterTier3, 3);
-}
-*/
-/*
-void AChunckManager::GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD)
-{
-    int32 Step = 1 << LOD;
-    int32 VertexCount = 0;
-    int32 EffectiveSize = ChunkSize / Step;
-    const int32 PaddedSize = ChunkSize + 2;
-
-    for (int32 Axis = 0; Axis < 3; ++Axis)
-    {
-        const int32 Axis1 = (Axis + 1) % 3;
-        const int32 Axis2 = (Axis + 2) % 3;
-
-        FIntVector AxisMask = FIntVector::ZeroValue;
-        AxisMask[Axis] = 1;
-
-        TArray<FMask> Mask;
-        Mask.SetNum(EffectiveSize * EffectiveSize);
-
-        FIntVector Iter = FIntVector::ZeroValue;
-
-        // On itère sur les indices "LOD" (0, 1, 2... EffectiveSize)
-        for (Iter[Axis] = -1; Iter[Axis] < EffectiveSize; ++Iter[Axis])
-        {
-            int32 N = 0;
-
-            // === 1. Construire le Mask ===
-            for (Iter[Axis2] = 0; Iter[Axis2] < EffectiveSize; ++Iter[Axis2])
-            {
-                for (Iter[Axis1] = 0; Iter[Axis1] < EffectiveSize; ++Iter[Axis1])
-                {
-                    // On multiplie par Step UNIQUEMENT pour lire la donnée voxel
-                    const int32 SX = Iter.X * Step;
-                    const int32 SY = Iter.Y * Step;
-                    const int32 SZ = Iter.Z * Step;
-
-                    const bool CurrentSolid = IsVoxelSolidLocal(SX, SY, SZ, PaddedVoxels, PaddedSize);
-                    // On compare avec le bloc suivant (décalé de Step)
-                    const bool CompareSolid = IsVoxelSolidLocal(SX + AxisMask.X * Step, SY + AxisMask.Y * Step, SZ + AxisMask.Z * Step, PaddedVoxels, PaddedSize);
-
-                    if (CurrentSolid == CompareSolid) {
-                        Mask[N++] = FMask{ 0, 0 };
-                    }
-                    else if (CurrentSolid) {
-                        Mask[N++] = FMask{ 1, 1 };
-                    }
-                    else {
-                        Mask[N++] = FMask{ 1, -1 };
-                    }
-                }
-            }
-
-            N = 0;
-            // === 2. Générer les quads ===
-            for (int32 j = 0; j < EffectiveSize; ++j)
-            {
-                for (int32 i = 0; i < EffectiveSize; )
-                {
-                    if (Mask[N].Normal != 0)
-                    {
-                        const FMask CurrentMask = Mask[N];
-                        int32 Width = 1;
-                        while (i + Width < EffectiveSize && CompareMask(Mask[N + Width], CurrentMask))
-                            ++Width;
-
-                        int32 Height = 1;
-                        bool Done = false;
-                        for (; Height + j < EffectiveSize; ++Height)
-                        {
-                            for (int32 k = 0; k < Width; ++k)
-                            {
-                                if (!CompareMask(Mask[N + k + Height * EffectiveSize], CurrentMask))
-                                {
-                                    Done = true; break;
-                                }
-                            }
-                            if (Done) break;
-                        }
-
-                        // Calcul des positions (on reste en indices LOD pour l'instant)
-                        FIntVector V1 = Iter;
-                        V1[Axis1] = i;
-                        V1[Axis2] = j;
-                        V1[Axis] += 1;
-                        // if (CurrentMask.Normal > 0) V1[Axis] += 1;
-
-                        FIntVector V2 = V1; V2[Axis1] += Width;
-                        FIntVector V3 = V1; V3[Axis2] += Height;
-                        FIntVector V4 = V2; V4[Axis2] += Height;
-
-                        // CLÉ : On multiplie par Step ici pour remettre le quad à la bonne taille monde
-                        CreateQuad(CurrentMask, AxisMask, Width, Height,
-                            V1 * Step, V2 * Step, V3 * Step, V4 * Step,
-                            VertexCount, OutMesh, Step);
-
-                        VertexCount += 4;
-
-                        for (int32 l = 0; l < Height; ++l)
-                            for (int32 k = 0; k < Width; ++k)
-                                Mask[N + k + l * EffectiveSize] = FMask{ 0, 0 };
-
-                        i += Width; N += Width;
-                    }
-                    else { ++i; ++N; }
-                }
-            }
-        }
-    }
-}
-
-*/
 void AChunckManager::TrySafeSpawn()
 {
     APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
@@ -1877,7 +1767,8 @@ void AChunckManager::ProcessUnloadQueue()
                 // son ANCIENNE doit être libérée aussi, sinon elle reste affichée.
                 if (Data->Phase == EChunkLODPhase::AwaitingNewMesh)
                 {
-                    PendingRelease   = Data->ReleaseLOD;
+                    PendingRelease = Data->ReleaseLOD;
+
                     PendingReleaseCC = Data->ReleaseClusterCoord;
                 }
 
@@ -2055,7 +1946,8 @@ void AChunckManager::NotifyDisplayApplied(FIntVector Coord)
         }
 
         ReleaseLOD = D->ReleaseLOD;
-        ReleaseCC  = D->ReleaseClusterCoord;
+        ReleaseCC = D->ReleaseClusterCoord;
+
 
         // L'ancienne représentation était un acteur LOD0, et le chunk n'est plus
         // en LOD0 : l'acteur n'affiche plus rien d'utile.
@@ -2097,7 +1989,8 @@ void AChunckManager::ProcessLODWatchdog()
         {
             const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(Coord);
             if (!D || D->Phase != EChunkLODPhase::AwaitingNewMesh
-                   || (Now - D->PhaseEnteredTime) > LODSwapWatchdogSeconds)
+                || (Now - D->PhaseEnteredTime) > LODSwapWatchdogSeconds)
+
                 TimedOut.Add(Coord);
         }
     }
@@ -2112,9 +2005,23 @@ void AChunckManager::ProcessLODWatchdog()
 
 void AChunckManager::NukeClusters()
 {
+    const FRealtimeMeshSectionGroupKey GroupKey =
+        FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Cluster"));
+
     int32 Cleared = 0;
     for (auto* Pool : { &ClusterPoolTier1, &ClusterPoolTier2, &ClusterPoolTier3 })
         for (auto& P : *Pool)
-            if (P.Value) { P.Value->SetStaticMesh(nullptr); ++Cleared; }
-    UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vidés (manager %s)"), Cleared, *GetName());
+            if (P.Value)
+                if (URealtimeMeshSimple* M = Cast<URealtimeMeshSimple>(P.Value->GetRealtimeMesh()))
+                {
+                    M->RemoveSectionGroup(GroupKey);
+                    ++Cleared;
+                }
+
+    // Sans ca, un Apply ulterieur ferait un Update sur un groupe supprime.
+    ClusterHasGroupTier1.Empty();
+    ClusterHasGroupTier2.Empty();
+    ClusterHasGroupTier3.Empty();
+
+    UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vides (manager %s)"), Cleared, *GetName());
 }
