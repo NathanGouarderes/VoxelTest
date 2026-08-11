@@ -88,6 +88,7 @@ FVector UKiWebComponent::GetHandSocketLocation(EKiArm Arm) const
 	}
 
 	const FName Socket = (Arm == EKiArm::Left) ? HandSocketLeft : HandSocketRight;
+	return FVector::ZeroVector;
 }
 
 bool UKiWebComponent::FireWeb(EKiArm Arm, const FVector& Origin, const FVector& Direction)
@@ -96,6 +97,7 @@ bool UKiWebComponent::FireWeb(EKiArm Arm, const FVector& Origin, const FVector& 
 	if (!Owner || Owner == nullptr)
 	{
 		Owner = GetOwner();
+		return false;
 	}
 
 	const FVector Dir = Direction.GetSafeNormal();
@@ -108,7 +110,7 @@ bool UKiWebComponent::FireWeb(EKiArm Arm, const FVector& Origin, const FVector& 
 	if (!World || !Owner)
 	{
 		NathanDebug(TEXT("!World || !Owner"));
-		return;
+		return false;
 	}
 
 	FCollisionQueryParams Params(FName("KiWebTrace"), true, Owner);
@@ -117,6 +119,7 @@ bool UKiWebComponent::FireWeb(EKiArm Arm, const FVector& Origin, const FVector& 
 	bHit = World->LineTraceSingleByChannel(Hit, Origin, End, WebTraceChanel, Params);
 	if (!bHit || Hit.bStartPenetrating)
 	{
-
+		return false;
 	}
+	return true;
 }

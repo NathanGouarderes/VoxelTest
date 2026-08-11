@@ -59,15 +59,13 @@ public:
 	int32 GetLODForChunck(const FIntVector& Coord, const FVector& PlayerPos) const;
 	FIntVector GetClusterCoord(FIntVector Coord, int LOD);
 	//int32 CalculChunkLODBeforeSpawn(FIntVector Coord);
+	bool BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize, TArray<FVoxelDataStructure>& OutVolume);
 
 	void GenerateAsyncGreedyMesh(FIntVector Coord/*, uint64 RequestedMask*/);
 	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
-	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
-	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize);
 
 	//void GenerateAsyncGreedyMeshForCluster(FIntVector Coord);
-	void ApplyMeshToCluster(const TArray<FChunckMeshData>& ChunkMeshData, TMap<FIntVector, UProceduralMeshComponent*>& ClusterPool, FIntVector ClusterCoord, int32 LOD);
 	float GetNoise(float WorldX, float WorldY);
 	void InitNoise();
 	void MarkVisibilityClean();
@@ -102,26 +100,9 @@ public:
 	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
 		TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ);
 	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
-		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize /*,const FVector& OriginOffset = FVector::ZeroVector*/);
+		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize, const FVector3f& OriginOffset = FVector3f::ZeroVector);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
-	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, const FChunckMeshData& Mesh);
-	bool BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize, TArray<FVoxelDataStructure>& OutVolume);
-
-
-
-	//FORCEINLINE int32  GetBricksPerAxis() const { return ChunkSize / BrickSize; }
-	//FORCEINLINE int32  GetNumBricks()     const { const int32 B = GetBricksPerAxis(); return B * B * B; }
-	//uint64  GetFullBrickMask() const;
-	//uint64  GetFaceBrickMask(const FIntVector& Dir) const;
-	//void    MarkChunkDirty(FIntVector Coord, uint64 BrickMask);
-	//void    RegisterDirtyRegion(FIntVector Coord, FIntVector LocalMin, FIntVector LocalMax);
-
-	//bool BuildBrickPaddedVolumeNoLock(const FChunckDataStructure& D, FIntVector Coord,
-	//	int32 BrickIndex, FVoxelDataStructure* OutPadded);
-
-	//void GenerateGreedyQuads(TArray<FPackedQuad>& OutQuads,TArrayView<const FVoxelDataStructure> Pad, const TArray<uint8>& MaskVol,int32 SX, int32 SY, int32 SZ);
-	//void ExpandQuadsToMesh(FChunckMeshData& OutMesh, const TArray<FPackedQuad>& Quads, float EVS, const FVector& OriginOffset);
-
+	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& MeshData);
 	TQueue<FIntVector> PendingUnloadQueue;
 
 	TQueue<FIntVector> PendingSpawnQueue;
@@ -227,9 +208,12 @@ public:
 	int32 MaxMeshJob;
 	int32 DesiredLOD;
 
-	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier1;
-	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier2;
-	TMap<FIntVector, UStaticMeshComponent*> ClusterPoolTier3;
+	UPROPERTY() TMap<FIntVector, URealtimeMeshComponent*> ClusterPoolTier1;   // idem Tier2, Tier3
+	UPROPERTY() TMap<FIntVector, URealtimeMeshComponent*> ClusterPoolTier2;
+	UPROPERTY() TMap<FIntVector, URealtimeMeshComponent*> ClusterPoolTier3;
+	TSet<FIntVector> ClusterHasGroupTier1;
+	TSet<FIntVector> ClusterHasGroupTier2;
+	TSet<FIntVector> ClusterHasGroupTier3;
 
 	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier1;
 	TMap<FIntVector, TArray<FChunckMeshData>> ClusterMapTier2;
@@ -254,15 +238,15 @@ public:
 	UPROPERTY(EditAnywhere)
 	int   SeaLevel;         // niveau de la mer (lacs + océan)
 
-	int32 NextGenerationId = 1;
-	TSet<FIntVector> PendingCommitSet;
-	TSet<FIntVector> ChunksAwaitingMesh;
+int32 NextGenerationId = 1;
+TSet<FIntVector> PendingCommitSet;
+TSet<FIntVector> ChunksAwaitingMesh;
 
-	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	float LODSwapWatchdogSeconds = 5.0f;
+UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+float LODSwapWatchdogSeconds = 5.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	int32 MaxConcurrentLODTransitions = 512;
+UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
+int32 MaxConcurrentLODTransitions = 512;
 
 
 	std::atomic<bool> bIsShuttingDown;

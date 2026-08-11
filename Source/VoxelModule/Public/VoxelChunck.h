@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
 #include "EVoxelAxis.h"
+#include "RealtimeMeshSimple.h"
 #include "Math/IntVector.h"
 #include "FChunckMeshData.h"
 #include "FVoxelDataStructure.h"
@@ -32,26 +32,12 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;	
 	float GetVoxelSize();
-	//void GenerateFacedMesh();
-	//void GenerateGreedyMesh(FChunckMeshData& MeshData, const TArray<FVoxelDataStructure>& LocalVoxels);
-	//void GenerateAsyncGreedyMesh();
-	void ApplyMesh(const FChunckMeshData& MeshData);
-	void CreateQuad(const FMask& Mask, const FIntVector& AxisMask, int32 Width, int32 Height, const FIntVector& V1, const FIntVector& V2, const FIntVector& V3, const FIntVector& V4, int32& VertexCount, FChunckMeshData& MeshData, int32 LOD);
-	bool CompareMask(const FMask& M1, const FMask& M2) const;
-
-	void AddQuadXPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuadXNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuadYPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuadYNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuadZPositive(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuadZNegative(int x, int y, int z, int width, int height, FChunckMeshData& MeshData);
-	void AddQuad(FVector P0, FVector P1, FVector P2, FVector P3, FVector Normal, FChunckMeshData& MeshData);
+	void ApplyMesh(FChunckMeshData&& MeshData);
 
 
 
 	void RemoveVoxel(int X, int Y, int Z);
 	bool IsVoxelSolid(int x, int y, int z);
-	bool IsVoxelSolidLocal(int x, int y, int z, const TArray<FVoxelDataStructure>& LocalVoxels, int32 PaddedSize);
 
 	//bool IsFaceVisible(int X, int Y, int Z, bool IsPositiveDirection);
 	//void GreedyDirection(Axis axis, bool positive);
@@ -62,7 +48,6 @@ public:
 	int32 CurrentLOD;
 	bool bIsDirty;
 	int32 Size;
-	UProceduralMeshComponent* ProceduralMeshComponent;
 	float VoxelSize;
 	FChunckMeshData ChunckDataMesh;
 	UPROPERTY()
@@ -70,6 +55,16 @@ public:
 	FIntVector Coord;
 	bool bIsQueued;
 	bool bIsBeingDestroyed = false;
+	UPROPERTY(VisibleAnywhere, Category = "Voxel")
+	TObjectPtr<URealtimeMeshComponent> RealtimeMeshComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URealtimeMeshSimple> RealtimeMeshSimple;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Voxel")
+	TObjectPtr<UMaterialInterface> TerrainMaterial;
+
+	bool bHasSectionGroup = false;
 	//TArray<FVoxelDataStructure> VoxelData;
 
 
