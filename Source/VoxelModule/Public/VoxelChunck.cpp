@@ -20,6 +20,9 @@ AVoxelChunck::AVoxelChunck()
 	//VoxelData.SetNum(Size * Size * Size);
 	RealtimeMeshComponent = CreateDefaultSubobject<URealtimeMeshComponent>(TEXT("RealtimeMeshComponent"));
 	SetRootComponent(RealtimeMeshComponent);
+	RealtimeMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	RealtimeMeshComponent->SetCollisionObjectType(ECC_WorldStatic);
+	RealtimeMeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
 	bIsQueued = false;
@@ -31,10 +34,14 @@ AVoxelChunck::AVoxelChunck()
 void AVoxelChunck::BeginPlay()
 {
 	Super::BeginPlay();
+	FRealtimeMeshCollisionConfiguration CollisionConfiguration;
+	CollisionConfiguration.bUseComplexAsSimpleCollision = true;
+	CollisionConfiguration.bUseAsyncCook = true;
 	RealtimeMeshSimple = RealtimeMeshComponent->InitializeRealtimeMesh<URealtimeMeshSimple>();
 	if (RealtimeMeshSimple)
 	{
 		RealtimeMeshSimple->SetupMaterialSlot(0, TEXT("Terrain"), TerrainMaterial);
+		RealtimeMeshSimple->SetCollisionConfig(CollisionConfiguration);
 	}
 
 }
@@ -145,6 +152,8 @@ void AVoxelChunck::ApplyMesh(FChunckMeshData&& MeshData)
 	{
 		// Premier mesh : cree le groupe et les sections associees.
 		RealtimeMeshSimple->CreateSectionGroup(GroupKey, MoveTemp(MeshData.Streams));
+		const FRealtimeMeshSectionKey SectionKey = FRealtimeMeshSectionKey::CreateForPolyGroup(GroupKey, 0);
+		RealtimeMeshSimple->UpdateSectionConfig(SectionKey, FRealtimeMeshSectionConfig(), true);
 		bHasSectionGroup = true;
 	}
 	else

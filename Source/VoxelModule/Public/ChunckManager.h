@@ -103,6 +103,11 @@ public:
 		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize, const FVector3f& OriginOffset = FVector3f::ZeroVector);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& MeshData);
+
+
+	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
+
+
 	TQueue<FIntVector> PendingUnloadQueue;
 
 	TQueue<FIntVector> PendingSpawnQueue;
@@ -168,7 +173,7 @@ public:
 	void TrySafeSpawn();
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 10000.0f, 4500.0f, 7000.0f, 144000.0f };
+	TArray<float> LODDistances = { 3000.0f, 6500.0f, 100000.0f, 144000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -243,7 +248,7 @@ TSet<FIntVector> PendingCommitSet;
 TSet<FIntVector> ChunksAwaitingMesh;
 
 UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-float LODSwapWatchdogSeconds = 5.0f;
+float LODSwapWatchdogSeconds = 30.0f;
 
 UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 int32 MaxConcurrentLODTransitions = 512;

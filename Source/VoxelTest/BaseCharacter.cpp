@@ -8,6 +8,7 @@
 #include "KiCharacterMovement.h"
 #include "Engine/LocalPlayer.h"
 #include "EnhancedInputComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 
@@ -168,5 +169,30 @@ void ABaseCharacter::OnReleaseKiWebRight()
 {
 	OnReleaseKiWeb(EKiArm::Right);
 }
+FVector ABaseCharacter::GetCenterEyesLooking() const
+{
+	FVector  OutLocation;
+	FRotator OutRotation;
+	GetActorEyesViewPoint(OutLocation, OutRotation);
+	return OutLocation + OutRotation.Vector() * 2000.0f;
+}
 
+void ABaseCharacter::CarveSphere(float Radius)
+{
+	const FVector Target = GetCenterEyesLooking();
+
+	// Recuperation du manager (meme pattern que ResolveVoxelWorldIfNeeded).
+	TArray<AActor*> Found;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AChunckManager::StaticClass(), Found);
+	if (Found.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("CarveSphere : aucun ChunckManager trouve"));
+		return;
+	}
+
+	if (AChunckManager* Manager = Cast<AChunckManager>(Found[0]))
+	{
+		Manager->CarveSphereAt(Target, Radius);
+	}
+}
 

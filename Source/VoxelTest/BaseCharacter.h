@@ -49,6 +49,9 @@ public:
 	void OnFireKiWebLeft();
 	void OnReleaseKiWebLeft();
 	void OnReleaseKiWebRight();
+	FVector GetCenterEyesLooking() const;
+	UFUNCTION(Exec)
+	void CarveSphere(float Radius);
 
 
 
@@ -76,9 +79,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> FireKiWebLeftArmAction;
 
-	bool bIsKiWebSkillActive = false;
-
-	
+	bool bIsKiWebSkillActive = false;	
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
