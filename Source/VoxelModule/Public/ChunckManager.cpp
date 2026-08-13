@@ -346,12 +346,22 @@ void AChunckManager::InitNoise()
 
 void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord, int32 LOD, int32 GenerationId)
 {
+    FChunkGenJob Job(Coord, Variant, this, LOD, GenerationId);
 
-    //if (!ChunckData) return;
-    int32 TotalSize = ChunkSize * ChunkSize * ChunkSize;
+    // Copie PAR VALEUR de la couche d'edition. EditLayers est deja indexe par
+    // chunk : aucun filtrage a faire, on prend tout.
+    if (IsValid(VoxelWorld))
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+        if (const FChunkEditLayer* Layer = VoxelWorld->EditLayers.Find(Coord))
+        {
+            Job.Edits = Layer->Edits;
+        }
+    }
 
-    ChunckGenerationJobQueue.Enqueue(FChunkGenJob(Coord, Variant, this, LOD, GenerationId));
+    ChunckGenerationJobQueue.Enqueue(MoveTemp(Job));
 }
+
 
 FIntVector AChunckManager::GetClusterCoord(FIntVector Coord, int LOD)
 {
@@ -1815,10 +1825,18 @@ void AChunckManager::ProcessUnloadQueue()
 
 bool AChunckManager::IsChunkGuaranteedEmpty(const FIntVector& Coord) const
 {
-    // Bas du chunk en voxels-monde. Marge d'un chunk pour absorber tout dépassement de bruit/octaves.
-    const int32 ChunkMinZVoxel = Coord.Z * ChunkSize;
+    // EN PREMIER, avant le test d'altitude : un chunk edite n'est JAMAIS
+    // garanti vide. Sans ca, une tour construite au-dessus de la surface
+    // maximale possible ne serait jamais spawnee -- donc jamais visible.
+    if (IsValid(VoxelWorld))
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+        if (VoxelWorld->EditLayers.Contains(Coord)) return false;
+    }
+
+    const int32 ChunkMinZVoxel  = Coord.Z * ChunkSize;
     const int32 MaxSurfaceVoxel = BaseHeight + FMath::CeilToInt(SurfaceAmplitude) + ChunkSize;
-    return ChunkMinZVoxel >= MaxSurfaceVoxel;   // tout le chunk est au-dessus de toute surface possible
+    return ChunkMinZVoxel >= MaxSurfaceVoxel;
 }
 
 /*
@@ -2026,49 +2044,33 @@ void AChunckManager::NukeClusters()
     UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vides (manager %s)"), Cleared, *GetName());
 }
 
-void AchunckManager::CarveSphereAt(FVector& WorldCenter, float RadiusMeters)
+void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeters)
 {
-    if(!IsValid(VoxelWorld))
-    {
-        continue;
-    }
+    if (!IsValid(VoxelWorld)) return;
 
     const double StartTime = FPlatformTime::Seconds();
-    FIntVector CenterVoxel(FMath::FloorToInt(WorldCenter.X / VoxelSize),FMath::FloorToInt(WorldCenter.Y / VoxelSize), FMath::FloorToInt(WorldCenter.Z / VoxelSize));
-    const int32 R = FMath::CeilToInt(RadiusMeters * 100 / VoxelSize);
+
+    const FIntVector CenterVoxel = WorldToVoxelGlobal(WorldCenter);
+    const int32      R           = FMath::CeilToInt(RadiusMeters * 100.0f / VoxelSize);
+
     const FIntVector BoxMin(CenterVoxel.X - R, CenterVoxel.Y - R, CenterVoxel.Z - R);
     const FIntVector BoxMax(CenterVoxel.X + R, CenterVoxel.Y + R, CenterVoxel.Z + R);
 
     const FIntVector ChunkMin(FloorDivInt(BoxMin.X, ChunkSize),
-    FloorDivInt(BoxMin.Y, ChunkSize),
-    FloorDivInt(BoxMin.Z, ChunkSize));
+                              FloorDivInt(BoxMin.Y, ChunkSize),
+                              FloorDivInt(BoxMin.Z, ChunkSize));
+    const FIntVector ChunkMax(FloorDivInt(BoxMax.X, ChunkSize),
+                              FloorDivInt(BoxMax.Y, ChunkSize),
+                              FloorDivInt(BoxMax.Z, ChunkSize));
 
-    const FIntVector ChunkMax(FloorDivInt(BoxMin.X, ChunkSize),
-    FloorDivInt(BoxMin.Y, ChunkSize),
-    FloorDivInt(BoxMin.Z, ChunkSize));
-
-    int32 ChunksInRange = 0;
-    int32 ChunksFound = 0;
-    {
-        FScopeLock Lock(&VoxelWorld->ChunckMutex);
-         for (int32 cz = ChunkMin.Z; cz <= ChunkMax.Z; ++cz)
-             for (int32 cy = ChunkMin.Y; cy <= ChunkMax.Y; ++cy)
-                 for (int32 cx = ChunkMin.X; cx <= ChunkMax.X; ++cx)
-                     {
-                         ++ChunksInRange;
-                         const FIntVector CC(cx, cy, cz);
-                         const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
-                         if (!D) continue;
-                         ++ChunksFound;
-                     }
-    }
-    int32 CellsTested   = 0;
-    int32 CellsModified = 0;
-
-    // Rayon au carre : comparer des carres evite un sqrt par cellule.
     const int64 R2 = (int64)R * (int64)R;
 
-    // Chunks reellement modifies, avec leur LOD (le routage dirty en depend).
+    FVoxelDataStructure Air;
+    Air.Material.Id = 0;
+
+    int32 ChunksInRange = 0, ChunksFound = 0, ChunksSkippedLOD = 0;
+    int32 CellsTested   = 0, CellsModified = 0;
+
     TMap<FIntVector, int32> TouchedChunks;
 
     {
@@ -2081,99 +2083,253 @@ void AchunckManager::CarveSphereAt(FVector& WorldCenter, float RadiusMeters)
             ++ChunksInRange;
 
             const FIntVector CC(cx, cy, cz);
-            FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);   // non-const : on ecrit
+            const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
             if (!D || D->Voxels.Num() == 0) continue;
             ++ChunksFound;
 
-            const int32 LOD     = D->LOD;
-            const int32 SubSize = ChunkSize >> LOD;   // taille du TABLEAU
-            if (D->Voxels.Num() != SubSize * SubSize * SubSize) continue;   // incoherent
+            // Destruction LOD0 UNIQUEMENT.
+            // A LOD>0 une cellule de stockage represente (1<<LOD)^3 voxels LOD0.
+            // N'ecrire qu'une entree d'edition par cellule produirait un gruyere
+            // au retour en LOD0. Les crateres kilometriques demandent la couche
+            // FCarveOp (journal d'operations), pas ce chemin-ci.
+            if (D->LOD != 0) { ++ChunksSkippedLOD; continue; }
 
-            // Origine du chunk en voxels-monde.
-            // ChunkSize = etendue geometrique : toujours 128, jamais decalee par le LOD.
             const int32 OX = cx * ChunkSize;
             const int32 OY = cy * ChunkSize;
             const int32 OZ = cz * ChunkSize;
 
-            // Intersection boite-sphere / boite-chunk, en voxels-monde,
-            // puis passage en indices de stockage (>> LOD).
-            const int32 IxMin = FMath::Max(BoxMin.X - OX, 0)             >> LOD;
-            const int32 IxMax = FMath::Min(BoxMax.X - OX, ChunkSize - 1) >> LOD;
-            const int32 IyMin = FMath::Max(BoxMin.Y - OY, 0)             >> LOD;
-            const int32 IyMax = FMath::Min(BoxMax.Y - OY, ChunkSize - 1) >> LOD;
-            const int32 IzMin = FMath::Max(BoxMin.Z - OZ, 0)             >> LOD;
-            const int32 IzMax = FMath::Min(BoxMax.Z - OZ, ChunkSize - 1) >> LOD;
+            const int32 IxMin = FMath::Max(BoxMin.X - OX, 0);
+            const int32 IxMax = FMath::Min(BoxMax.X - OX, ChunkSize - 1);
+            const int32 IyMin = FMath::Max(BoxMin.Y - OY, 0);
+            const int32 IyMax = FMath::Min(BoxMax.Y - OY, ChunkSize - 1);
+            const int32 IzMin = FMath::Max(BoxMin.Z - OZ, 0);
+            const int32 IzMax = FMath::Min(BoxMax.Z - OZ, ChunkSize - 1);
 
             bool bChunkTouched = false;
 
-            // Boucle dans l'espace STOCKAGE : une iteration = une cellule reelle.
-            // En voxels-monde, un chunk LOD3 ferait 512 iterations pour la meme case.
             for (int32 iz = IzMin; iz <= IzMax; ++iz)
             for (int32 iy = IyMin; iy <= IyMax; ++iy)
             for (int32 ix = IxMin; ix <= IxMax; ++ix)
             {
                 ++CellsTested;
 
-                // Retour en voxels-monde pour tester la distance.
-                // << LOD : l'inverse exact du >> LOD ci-dessus.
-                const int64 dx = (int64)(OX + (ix << LOD)) - CenterVoxel.X;
-                const int64 dy = (int64)(OY + (iy << LOD)) - CenterVoxel.Y;
-                const int64 dz = (int64)(OZ + (iz << LOD)) - CenterVoxel.Z;
+                const int64 dx = (int64)(OX + ix) - CenterVoxel.X;
+                const int64 dy = (int64)(OY + iy) - CenterVoxel.Y;
+                const int64 dz = (int64)(OZ + iz) - CenterVoxel.Z;
+                if (dx * dx + dy * dy + dz * dz > R2) continue;
 
-                if (dx*dx + dy*dy + dz*dz > R2) continue;   // hors sphere
-
-                const int32 Index = ix + iy * SubSize + iz * SubSize * SubSize;
-
-                // Deja vide : on ne compte pas, et surtout on ne salit pas le chunk
-                // pour rien. Un chunk visite n'est pas un chunk modifie.
-                if (D->Voxels[Index].Material.Id == 0) continue;
-
-                D->Voxels[Index].Material.Id = 0;
-                ++CellsModified;
-                bChunkTouched = true;
+                FIntVector DummyCC;
+                int32      DummyLOD;
+                if (SetVoxelAtNoLock(FIntVector(OX + ix, OY + iy, OZ + iz),
+                                     Air, DummyCC, DummyLOD))
+                {
+                    ++CellsModified;
+                    bChunkTouched = true;
+                }
             }
 
-            if (bChunkTouched)
+            if (bChunkTouched) TouchedChunks.Add(CC, 0);
+        }
+    }
+
+    DispatchChunkRebuilds(TouchedChunks);
+
+    const double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("CARVE R=%.1fm | chunks %d/%d (skip LOD>0 : %d) | testees=%d modifiees=%d | %.2f ms"),
+        RadiusMeters, ChunksFound, ChunksInRange, ChunksSkippedLOD,
+        CellsTested, CellsModified, ElapsedMs);
+}
+
+FIntVector AChunckManager::WorldToVoxelGlobal(FVector World)
+{
+    return FVIntVector(FMath::FloorToInt(World.X / VoxelSize),
+        FMath::FloorToInt(World.Y / VoxelSize),
+        FMath::FloorToInt(World.Z / VoxelSize));
+}
+
+FIntVector AChunckManager::VoxelGlobalToChunk(FIntVector VoxelLocation)
+{
+    return FIntVector(FloorDivInt(VocelLocation.X, ChunkSize),
+        FloorDivInt(VocelLocation.Y, ChunkSize),
+        FloorDivInt(VocelLocation.Z, ChunkSize));
+}
+
+
+int32 AChunckManager::VoxelGlobalToLocalIndex0(FIntVector G, FIntVector CC)
+{
+   int32 lx = G.X - CC.X * ChunkSize;
+   int32 ly = G.Y - CC.Y * ChunkSize;
+   int32 lz = G.Z - CC.Z * ChunkSize;
+
+    if(lx >= 0 && lx < ChunkSize || ly >= 0 && ly < ChunkSize || lz >= 0 && lz < ChunkSize)
+    {
+        UE_LOG(LogTemp, Error, TEXT("AChunckManager::VoxelGlobalToLocalIndex0 --> lx >= 0 && lx < ChunkSize || ly >= 0 && ly < ChunkSize || lz >= 0 && lz < ChunkSize"));    
+    }
+
+    return lx + ly * ChunkSize + lz * ChunkSize * ChunkSize;
+}
+
+
+bool AChunckManager::SetVoxelAtNoLock(const FIntVector& VoxelGlobal,
+                                      const FVoxelDataStructure& NewValue,
+                                      FIntVector& OutChunkCoord,
+                                      int32& OutChunkLOD)
+{
+    OutChunkCoord = VoxelGlobalToChunk(VoxelGlobal);
+    OutChunkLOD   = INDEX_NONE;
+
+    if (!IsValid(VoxelWorld)) return false;
+
+    const FIntVector CC   = OutChunkCoord;
+    const int32      Idx0 = VoxelGlobalToLocalIndex0(VoxelGlobal, CC);
+
+    // --- 1) Couche d'edition : la verite persistante ---------------------
+    const bool BaseSolid = ChunckGenWorker::EvaluateNoiseSolid(
+        VoxelGlobal.X, VoxelGlobal.Y, VoxelGlobal.Z,
+        SurfaceNoise, CaveNoise,
+        SurfaceWavelength, SurfaceAmplitude, BaseHeight,
+        CaveFrequency, CaveThreshold);
+
+    const uint8 BaseId = ChunckGenWorker::EvaluateNoiseMaterialId(BaseSolid);
+
+    if (NewValue.Material.Id == BaseId)
+    {
+        // Retour a l'etat d'origine : on SUPPRIME l'exception au lieu d'en
+        // stocker une. C'est ce qui empeche la couche de gonfler a l'infini
+        // quand un joueur creuse puis rebouche.
+        if (FChunkEditLayer* Layer = VoxelWorld->EditLayers.Find(CC))
+        {
+            Layer->Edits.Remove(Idx0);
+            ++Layer->Revision;
+            if (Layer->Edits.Num() == 0)
             {
-                TouchedChunks.Add(CC, LOD);
+                VoxelWorld->EditLayers.Remove(CC);
             }
         }
-    }   // <-- VERROU RELACHE ICI. Le dispatch qui suit le reprendrait.
+    }
+    else
+    {
+        FChunkEditLayer& Layer = VoxelWorld->EditLayers.FindOrAdd(CC);
+        Layer.Edits.Add(Idx0, NewValue);   // Add ecrase si la cle existe deja
+        ++Layer.Revision;
+    }
 
-    // --- Dispatch des reconstructions, HORS verrou ---
-    // Le mesher lit une coque de padding d'un voxel chez ses 6 voisins
-    // (cf. BuildChunkPaddedVolumeNoLock). Modifier une face invalide donc
-    // aussi le mesh du voisin de ce cote.
+    // --- 2) Chunk charge : retour immediat a l'ecran ---------------------
+    FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
+    if (!D || D->Voxels.Num() == 0) return false;
+
+    const int32 LOD     = D->LOD;
+    const int32 SubSize = ChunkSize >> LOD;
+    if (D->Voxels.Num() != SubSize * SubSize * SubSize) return false;
+
+    const int32 lx = VoxelGlobal.X - CC.X * ChunkSize;
+    const int32 ly = VoxelGlobal.Y - CC.Y * ChunkSize;
+    const int32 lz = VoxelGlobal.Z - CC.Z * ChunkSize;
+
+    // A LOD2, seuls les voxels d'indice multiple de 4 existent dans le tableau.
+    // Les autres n'ont AUCUNE representation a ce LOD : l'edition est stockee,
+    // elle apparaitra quand le chunk repassera a une resolution assez fine.
+    const int32 Step = 1 << LOD;
+    if ((lx % Step) != 0 || (ly % Step) != 0 || (lz % Step) != 0) return false;
+
+    const int32 Index = (lx >> LOD)
+                      + (ly >> LOD) * SubSize
+                      + (lz >> LOD) * SubSize * SubSize;
+    if (!D->Voxels.IsValidIndex(Index)) return false;
+
+    if (D->Voxels[Index].Material.Id == NewValue.Material.Id) return false;  // deja bon
+
+    D->Voxels[Index] = NewValue;
+    OutChunkLOD = LOD;
+    return true;
+}
+
+void AChunckManager::SetVoxelAt(const FIntVector& VoxelGlobal, const FVoxelDataStructure& NewValue)
+{
+    if (!IsValid(VoxelWorld)) return;
+
+    FIntVector CC;
+    int32      LOD      = INDEX_NONE;
+    bool       bTouched = false;
+
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+        bTouched = SetVoxelAtNoLock(VoxelGlobal, NewValue, CC, LOD);
+    }   // <-- verrou relache AVANT le dispatch : RegisterDirtyChunk le reprendrait.
+
+    if (bTouched)
+    {
+        TMap<FIntVector, int32> Touched;
+        Touched.Add(CC, LOD);
+        DispatchChunkRebuilds(Touched);
+    }
+}
+
+void AChunckManager::DispatchChunkRebuilds(const TMap<FIntVector, int32>& TouchedChunks)
+{
+    if (!IsValid(VoxelWorld) || TouchedChunks.Num() == 0) return;
+
+    // Le mesher lit une coque de padding d'un voxel chez ses 6 voisins.
+    // Modifier une face invalide donc aussi le mesh du voisin de ce cote.
     static const FIntVector Dirs[6] =
-        { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
+    { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
 
     TMap<FIntVector, int32> ToRebuild = TouchedChunks;
-    for (const TPair<FIntVector, int32>& P : TouchedChunks)
-    {
-        for (const FIntVector& Dir : Dirs)
-        {
-            const FIntVector NC = P.Key + Dir;
-            if (ToRebuild.Contains(NC)) continue;
 
-            // Le LOD du voisin peut differer : on le lit, on ne le suppose pas.
-            FScopeLock Lock(&VoxelWorld->ChunckMutex);
-            if (const FChunckDataStructure* N = VoxelWorld->Chuncks.Find(NC))
+    {
+        FScopeLock Lock(&VoxelWorld->ChunckMutex);
+        for (const TPair<FIntVector, int32>& P : TouchedChunks)
+        {
+            for (const FIntVector& Dir : Dirs)
             {
-                ToRebuild.Add(NC, N->LOD);
+                const FIntVector NC = P.Key + Dir;
+                if (ToRebuild.Contains(NC)) continue;
+
+                // Le LOD du voisin peut differer : on le lit, on ne le suppose pas.
+                if (const FChunckDataStructure* N = VoxelWorld->Chuncks.Find(NC))
+                {
+                    ToRebuild.Add(NC, N->LOD);
+                }
             }
         }
     }
 
     for (const TPair<FIntVector, int32>& P : ToRebuild)
     {
-        if (P.Value == 0)   RegisterDirtyChunk(P.Key);
-        else                RequestClusterRebuild(GetClusterCoord(P.Key, P.Value), P.Value);
+        if (P.Value == 0) RegisterDirtyChunk(P.Key);
+        else              RequestClusterRebuild(GetClusterCoord(P.Key, P.Value), P.Value);
     }
+}
 
-    const double ElapsedMs = (FPlatformTime::Seconds() - StartTime) * 1000.0;
+void AChunckManager::SetVoxel(int32 gx, int32 gy, int32 gz, int32 MaterialId)
+{
+    FVoxelDataStructure V;
+    V.Material.Id = (uint8)MaterialId;
+    SetVoxelAt(FIntVector(gx, gy, gz), V);
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("CARVE R=%.1fm | chunks %d/%d | testees=%d modifiees=%d | salis=%d | %.2f ms"),
-        RadiusMeters, ChunksFound, ChunksInRange,
-        CellsTested, CellsModified, ToRebuild.Num(), ElapsedMs);
+    UE_LOG(LogTemp, Warning, TEXT("SetVoxel (%d,%d,%d) = %d"), gx, gy, gz, MaterialId);
+}
+
+void AChunckManager::TestCoords()
+{
+    const FIntVector Samples[] = {
+        {   0,   0,   0 }, {  127, 127, 127 }, {  128, 128, 128 },
+        {  -1,  -1,  -1 }, {   -5,  -5,  -5 }, { -128,-128,-128 },
+        {-129,-129,-129 }, { -300, 450,-777 }
+    };
+
+    for (const FIntVector& G : Samples)
+    {
+        const FIntVector CC   = VoxelGlobalToChunk(G);
+        const int32      Idx0 = VoxelGlobalToLocalIndex0(G, CC);
+        const int32 lx = G.X - CC.X * ChunkSize;
+        const int32 ly = G.Y - CC.Y * ChunkSize;
+        const int32 lz = G.Z - CC.Z * ChunkSize;
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("G=(%5d,%5d,%5d) -> CC=(%3d,%3d,%3d) local=(%3d,%3d,%3d) idx0=%d"),
+            G.X, G.Y, G.Z, CC.X, CC.Y, CC.Z, lx, ly, lz, Idx0);
+    }
 }
