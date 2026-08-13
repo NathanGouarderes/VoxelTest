@@ -25,7 +25,7 @@ public:
 	virtual uint32 Run() override;
 	virtual void Stop() override;
 	static bool EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite SurfaceNoise, FastNoiseLite CaveNoise,
-float SurfaceAmplitude, float SurfaceWavelength, float SurfaceAmplitude, int32 BaseHeight, float CaveFrequency, float CaveThreshold);
+float SurfaceAmplitude, float SurfaceWavelength, int32 BaseHeight, float CaveFrequency, float CaveThreshold);
 
 private:
 	FCriticalSection StopMutex;
