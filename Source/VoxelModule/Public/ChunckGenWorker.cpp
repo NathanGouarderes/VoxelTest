@@ -94,17 +94,17 @@ void ChunckGenWorker::Stop()
 }
 
 
-bool ChunckGenWorker::EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite SurfaceNoise, FastNoiseLite CaveNoise,
+int8 ChunckGenWorker::EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite& SurfaceNoise, FastNoiseLite& CaveNoise,
 float SurfaceAmplitude, float SurfaceWavelength, float SurfaceAmplitude, int32 BaseHeight, float CaveFrequency, float CaveThreshold)
 {
-	float SurfaceAmplitude = SurfaceNoise.GetNoise(gx / SurfaceWavelength, gy / SurfaceWavelength);
+	float SurfaceNoiseValue = SurfaceNoise.GetNoise(gx / SurfaceWavelength, gy / SurfaceWavelength);
 	int SurfaceHeight = BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * SurfaceAmplitude);
 
 	if(gz >= SurfaceHeight)
 	{
 		return false;
 	}
-	float CaveNoiseValue = CaveNoise.GetNoise(gx  * Job.CaveFrequency, gy * CaveFrequency, gz * CaveFrequency);
+	float CaveNoiseValue = CaveNoise.GetNoise(gx * CaveFrequency, gy * CaveFrequency, gz * CaveFrequency);
 	if(CaveNoiseValue > CaveThreshold)
 	{
 		return false;
