@@ -103,6 +103,18 @@ public:
 		const TArray<FVoxelDataStructure>& Pad, const TArray<uint8>& MaskVol, int32 SX, int32 SY, int32 SZ, float EffectiveVoxelSize, const FVector3f& OriginOffset = FVector3f::ZeroVector);
 	bool TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD);
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& MeshData);
+
+
+	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
+
+	FIntVector WorldToVoxelGlobal(FVector World);
+	FIntVector VoxelGlobalToChunk(FIntVector VoxelLocation);
+	int32 VoxelGlobalToLocalIndex0(FIntVector G, FIntVector CC);
+
+	void SetVoxelAt(FIntVector VoxelGlobal, FVoxelDataStructure VoxelNewValue);
+	void SetVoxel(int32 gx, int32 gy, int32 gz, int32 MaterialId);
+	void DispatchChunkRebuilds(const TMap<FIntVector, int32>& TouchedChunks);
+
 	TQueue<FIntVector> PendingUnloadQueue;
 
 	TQueue<FIntVector> PendingSpawnQueue;
@@ -168,7 +180,7 @@ public:
 	void TrySafeSpawn();
 
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-	TArray<float> LODDistances = { 5000, 40000, 64000, 144000 };
+	TArray<float> LODDistances = { 3000.0f, 6500.0f, 100000.0f, 144000.0f };
 	UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 	int MaxLOD = 3;
 
@@ -243,7 +255,7 @@ TSet<FIntVector> PendingCommitSet;
 TSet<FIntVector> ChunksAwaitingMesh;
 
 UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
-float LODSwapWatchdogSeconds = 5.0f;
+float LODSwapWatchdogSeconds = 30.0f;
 
 UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 int32 MaxConcurrentLODTransitions = 512;
