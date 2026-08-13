@@ -33,6 +33,7 @@ struct FChunkGenJob
 	int32 SeaLevel = 24;
 	FastNoiseLite SurfaceNoise;
 	FastNoiseLite CaveNoise;
+    TMap<int32, FVoxelDataStructure> Edits;
 
 	FChunkGenJob() : Coord(FIntVector::ZeroValue), Variant(EChunkVariant::Full){}
 	FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD, int32 InGenerationId);
