@@ -111,3 +111,9 @@ float SurfaceAmplitude, float SurfaceWavelength, float SurfaceAmplitude, int32 B
 	}
 	return true;
 }
+
+
+int8 ChunckGenWorker::EvaluateNoiseMaterial(bool bIsSolid)
+{
+	return bIsSolid ? 1 : 0;
+}
