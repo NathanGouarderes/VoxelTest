@@ -94,7 +94,7 @@ void ChunckGenWorker::Stop()
 }
 
 
-int8 ChunckGenWorker::EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite& SurfaceNoise, FastNoiseLite& CaveNoise,
+bool ChunckGenWorker::EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite& SurfaceNoise, FastNoiseLite& CaveNoise,
 float SurfaceAmplitude, float SurfaceWavelength, float SurfaceAmplitude, int32 BaseHeight, float CaveFrequency, float CaveThreshold)
 {
 	float SurfaceNoiseValue = SurfaceNoise.GetNoise(gx / SurfaceWavelength, gy / SurfaceWavelength);
