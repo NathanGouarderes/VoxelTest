@@ -20,12 +20,13 @@ Cellule stockage au LOD L → local LOD0 :   lx0 = x << L
 
 struct FChunkGenJob
 {
+	int32 LOD = 0;
+	int32 GenerationId = 0;
 	FIntVector Coord;
 	EChunkVariant Variant;
 	int32 ChunkSize = 128; // Valeur par défaut de sécurité
-	TMap<int32, FVoxelDataStructure> Edits;
-	float SurfaceFrequency = 0.01f;
 	float SurfaceAmplitude = 50.0f;
+	float SurfaceWavelength = 2500.0f;
 	int32 BaseHeight = 64;
 	float CaveFrequency = 0.01f;
 	float CaveThreshold = 0.5f;
@@ -34,6 +35,6 @@ struct FChunkGenJob
 	FastNoiseLite CaveNoise;
 
 	FChunkGenJob() : Coord(FIntVector::ZeroValue), Variant(EChunkVariant::Full){}
-	FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager);
+	FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD, int32 InGenerationId);
 	
 };
