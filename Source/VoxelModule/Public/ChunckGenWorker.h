@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "HAL/Runnable.h"
 #include "HAL/Event.h"
+#include "FastNoiseLite.h"
 #include "Containers/Queue.h"
 #include "FChunckGenJob.h"
 #include "EChunkVariant.h"
@@ -23,6 +24,8 @@ public:
 	virtual bool Init() override;
 	virtual uint32 Run() override;
 	virtual void Stop() override;
+	static bool EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite SurfaceNoise, FastNoiseLite CaveNoise,
+float SurfaceAmplitude, float SurfaceWavelength, float SurfaceAmplitude, int32 BaseHeight, float CaveFrequency, float CaveThreshold);
 
 private:
 	FCriticalSection StopMutex;
