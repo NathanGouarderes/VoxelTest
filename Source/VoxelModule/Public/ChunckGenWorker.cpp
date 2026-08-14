@@ -35,6 +35,15 @@ uint32 ChunckGenWorker::Run()
         const int32 ChunckSize = Job.ChunkSize;
         const int32 SubSize = ChunckSize >> Job.LOD;
         const int32 Step = 1 << Job.LOD;
+		bool bHasEdits;
+		if(Job.Edits.Num() == 0)
+		{
+			bHasEdits = false
+		}
+		else
+		{
+			bHasEdits = true;
+		}
         const int32 TotalSize = SubSize * SubSize * SubSize;
         TArray<FVoxelDataStructure> LocalVoxel;
         LocalVoxel.SetNumZeroed(TotalSize);
@@ -51,6 +60,7 @@ uint32 ChunckGenWorker::Run()
                 for (int z = 0; z < SubSize; z++)
                 {
                     int Index = x + y * SubSize + z * SubSize * SubSize;
+					int32 Idx0 = x * Step + y* Step * ChunkSize+z * Step *ChunkSize*ChunkSize;
                     int GlobalZ = Job.Coord.Z * ChunckSize + z * Step;
                     bool IsSolid = (GlobalZ < GlobalSurfaceHeigh);
                     if (IsSolid)
@@ -61,7 +71,29 @@ uint32 ChunckGenWorker::Run()
                             IsSolid = false;
                         }
                     }
-                    LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
+					if(bHasEdits)
+					{
+						if(FVoxelDataStructure* Layer = Job.Edits.Find(Idx0))
+						{
+							LocalVoxel[Index].Material.Id = Layer->Material.Id;
+							if(LocalVoxel[Index].Material.Id > 0)
+							{
+								IsSolid = true;
+							}
+							else
+							{
+								IsSolid = false;
+							}
+						}
+						else
+						{
+							LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
+						}
+					}
+					else
+					{
+						LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
+					}
                     if (IsSolid)
                     {
                         bIsAllEmpty = false;
