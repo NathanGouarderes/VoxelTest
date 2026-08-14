@@ -60,7 +60,6 @@ uint32 ChunckGenWorker::Run()
                 for (int z = 0; z < SubSize; z++)
                 {
                     int Index = x + y * SubSize + z * SubSize * SubSize;
-					int32 Idx0 = x * Step + y* Step * ChunkSize+z * Step *ChunkSize*ChunkSize;
                     int GlobalZ = Job.Coord.Z * ChunckSize + z * Step;
                     bool IsSolid = (GlobalZ < GlobalSurfaceHeigh);
                     if (IsSolid)
@@ -71,37 +70,26 @@ uint32 ChunckGenWorker::Run()
                             IsSolid = false;
                         }
                     }
+					FVoxelDataStructure Value;
+					Value.Material.Id = IsSolid ? 1 : 0;
+					
 					if(bHasEdits)
 					{
+						int32 Idx0 = x * Step + y* Step * ChunkSize+z * Step *ChunkSize*ChunkSize;
 						if(FVoxelDataStructure* Layer = Job.Edits.Find(Idx0))
 						{
-							LocalVoxel[Index].Material.Id = Layer->Material.Id;
-							if(LocalVoxel[Index].Material.Id > 0)
-							{
-								IsSolid = true;
-							}
-							else
-							{
-								IsSolid = false;
-							}
+							Value = Layer->Material.Id;
 						}
-						else
-						{
-							LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
-						}
+					}
+					LocalVoxel[Index] = Value;
+                    if(Value.Material.Id != 0)
+					{
+						bIsAllEmpty = false;
 					}
 					else
 					{
-						LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
+						bIsAllSolid = false;
 					}
-                    if (IsSolid)
-                    {
-                        bIsAllEmpty = false;
-                    }
-                    else
-                    {
-                        bIsAllSolid = false;
-                    }
                 }
             }
         }
