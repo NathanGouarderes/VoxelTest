@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 
 // Catégorie de log dédiée (optionnel mais recommandé)
-DECLARE_LOG_CATEGORY_EXTERN(LogNathanDebug, Log, All);
+VOXELMODULE_API DECLARE_LOG_CATEGORY_EXTERN(LogNathanDebug, Log, All);
 
 // Macro variadique : NathanDebug(TEXT("Valeur: %d"), x)
 #define NathanDebug(Format, ...) \

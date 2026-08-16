@@ -62,7 +62,6 @@ public:
 	bool BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize, TArray<FVoxelDataStructure>& OutVolume);
 
 	void GenerateAsyncGreedyMesh(FIntVector Coord/*, uint64 RequestedMask*/);
-	void GenerateGreedyMesh(FChunckMeshData& OutMesh, const TArray<FVoxelDataStructure>& PaddedVoxels, FIntVector Coord, int32 LOD);
 	bool CompareMask(const FMask& M1, const FMask& M2) const;
 
 	//void GenerateAsyncGreedyMeshForCluster(FIntVector Coord);
@@ -106,6 +105,17 @@ public:
 
 
 	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
+
+	FIntVector WorldToVoxelGlobal(FVector World);
+	FIntVector VoxelGlobalToChunk(FIntVector VoxelLocation);
+	int32 VoxelGlobalToLocalIndex0(FIntVector G, FIntVector CC);
+
+	void SetVoxelAt(const FIntVector& VoxelGlobal, const FVoxelDataStructure& NewValue);
+	bool SetVoxelAtNoLock(const FIntVector& VoxelGlobal, const FVoxelDataStructure& NewValue, FIntVector& OutChunkCoord, int32& OutChunkLOD);
+	void SetVoxel(int32 gx, int32 gy, int32 gz, int32 MaterialId);
+	void DispatchChunkRebuilds(const TMap<FIntVector, int32>& TouchedChunks);
+	void TestCoords();
+	static bool ApplyBrushOp(TArray<FVoxelDataStructure>& Voxels, FIntVector ChunkCoord, int32 LOD, int32 ChunkSize, const FVoxelBrushOp& Op);
 
 
 	TQueue<FIntVector> PendingUnloadQueue;
@@ -166,7 +176,7 @@ public:
 	int ChunkSize = 128;//32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 10;
+	int32 HorizontalViewDistance = 40;
 	int32 VerticalViewDistance = 10;
 
 	FTimerHandle SafeSpawnTimer;
@@ -252,6 +262,8 @@ float LODSwapWatchdogSeconds = 30.0f;
 
 UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 int32 MaxConcurrentLODTransitions = 512;
+
+int32 NextBrushSeq = 0;
 
 
 	std::atomic<bool> bIsShuttingDown;

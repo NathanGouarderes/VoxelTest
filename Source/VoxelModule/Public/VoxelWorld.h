@@ -8,6 +8,7 @@
 #include "FVoxelDataStructure.h"
 #include "ChunckManager.h"
 #include "FChunkMeshResult.h"
+#include "../../VoxelModule/Public/Structs/FChunkEditLayer.h"
 #include "HAL/CriticalSection.h"
 #include "VoxelWorld.generated.h"
 
@@ -35,6 +36,7 @@ public:
 	static constexpr int ChunckSize = 128;
 
 	TMap<FIntVector, FChunckDataStructure> Chuncks;
+	TMap<FIntVector, FChunkEditLayer> EditLayers;
 	FCriticalSection ChunckMutex;
 	TQueue<FChunkMeshResult> MeshUploadQueue;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")

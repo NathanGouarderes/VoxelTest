@@ -2,6 +2,7 @@
 #include "ChunckGenWorker.h"
 #include "ChunckManager.h"
 #include "FChunkGenResult.h"
+#include "DebugMacro.h"
 #include "VoxelWorld.h"
 ChunckGenWorker::ChunckGenWorker(AChunckManager* InManager, TQueue<FChunkGenJob, EQueueMode::Mpsc>& InQueue)
     : bStopRequest(false)
@@ -37,9 +38,13 @@ uint32 ChunckGenWorker::Run()
         const int32 Step = 1 << Job.LOD;
         const int32 TotalSize = SubSize * SubSize * SubSize;
         TArray<FVoxelDataStructure> LocalVoxel;
-        LocalVoxel.SetNumZeroed(TotalSize);
-        bool bIsAllSolid = true;
         bool bIsAllEmpty = true;
+        bool bIsAllSolid = true;
+        const bool bHasBrush = Job.BrushOps.Num() > 0;
+        LocalVoxel.SetNumZeroed(TotalSize);
+        const bool bHasEdits = Job.Edits.Num() > 0;
+
+
         for (int x = 0; x < SubSize; x++)
         {
             for (int y = 0; y < SubSize; y++)
@@ -61,18 +66,58 @@ uint32 ChunckGenWorker::Run()
                             IsSolid = false;
                         }
                     }
-                    LocalVoxel[Index].Material.Id = IsSolid ? 1 : 0;
-                    if (IsSolid)
-                    {
-                        bIsAllEmpty = false;
-                    }
-                    else
-                    {
-                        bIsAllSolid = false;
-                    }
+                    FVoxelDataStructure Value;
+                    Value.Material.Id = IsSolid ? 1 : 0;
+                    
+                    LocalVoxel[Index] = Value;
                 }
             }
         }
+
+        if (bHasBrush)
+        {
+            for (const FVoxelBrushOp& Op : Job.BrushOps)
+            {
+                AChunckManager::ApplyBrushOp(LocalVoxel, Job.Coord, Job.LOD, Job.ChunkSize, Op);
+            }
+        }
+        if (bHasEdits)
+        {
+            for (TPair<int32, FVoxelDataStructure> P : Job.Edits)
+            {
+                int32 Idx0 = P.Key;
+                int32 lz = Idx0 / (ChunckSize * ChunckSize);
+                int32 ly = (Idx0 / ChunckSize) % ChunckSize;
+                int32 lx = Idx0 % ChunckSize;
+                if (lx % Step == 0 || ly % Step, lz % Step)
+                {
+                    continue;
+                }
+                int32 Index = (lx >> Job.LOD) + (ly >> Job.LOD) * SubSize + (lz >> Job.LOD) * SubSize * SubSize;
+                if (!LocalVoxel.IsValidIndex(Index))
+                {
+                    continue;
+                }
+                LocalVoxel[Index] = P.Value;
+            }
+        }
+        for (FVoxelDataStructure Voxel : LocalVoxel)
+        {
+            if (Voxel.Material.Id != 0)
+            {
+                bIsAllEmpty = false;
+            }
+            else
+            {
+                bIsAllSolid = false;
+            }
+            if (!bIsAllEmpty && !bIsAllSolid)
+            {
+                break;
+            }
+        }
+
+
         if (ChunckManager)
         {
             FChunkGenResult Result;
@@ -91,4 +136,28 @@ void ChunckGenWorker::Stop()
 {
     FScopeLock Lock(&StopMutex);
     bStopRequest = true;
+}
+
+bool ChunckGenWorker::EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite& SurfaceNoise, FastNoiseLite& CaveNoise,
+    float SurfaceAmplitude, float SurfaceWavelength, int32 BaseHeight, float CaveFrequency, float CaveThreshold)
+{
+    float SurfaceNoiseValue = SurfaceNoise.GetNoise(gx / SurfaceWavelength, gy / SurfaceWavelength);
+    int SurfaceHeight = BaseHeight + FMath::FloorToInt(SurfaceNoiseValue * SurfaceAmplitude);
+
+    if (gz >= SurfaceHeight)
+    {
+        return false;
+    }
+    float CaveNoiseValue = CaveNoise.GetNoise(gx * CaveFrequency, gy * CaveFrequency, gz * CaveFrequency);
+    if (CaveNoiseValue > CaveThreshold)
+    {
+        return false;
+    }
+    return true;
+}
+
+
+int8 ChunckGenWorker::EvaluateNoiseMaterial(bool bIsSolid)
+{
+    return bIsSolid ? 1 : 0;
 }

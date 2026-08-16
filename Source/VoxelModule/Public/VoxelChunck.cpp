@@ -23,6 +23,7 @@ AVoxelChunck::AVoxelChunck()
 	RealtimeMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	RealtimeMeshComponent->SetCollisionObjectType(ECC_WorldStatic);
 	RealtimeMeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
+	RealtimeMeshComponent->bVisibleInRayTracing = false;
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
 	bIsQueued = false;
@@ -168,6 +169,11 @@ void AVoxelChunck::ApplyMesh(FChunckMeshData&& MeshData)
 
 void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 {
+	if (!ChunckManager || !ChunckManager->VoxelWorld)
+	{
+		UE_LOG(LogTemp, Error, TEXT(" AVoxelChunck::RemoveVoxel(int X, int Y, int Z) --> ChunckManager ou VoxelWorld invalide"));
+		return;
+	}
 	FScopeLock Lock(&ChunckManager->VoxelWorld->ChunckMutex);
 	//Vérification des limites
 	if (X < 0 || X >= Size || Y < 0 || Y >= Size || Z < 0 || Z >= Size)
@@ -178,17 +184,22 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 	{
 		return;
 	}
-	if (!ChunckManager || !ChunckManager->VoxelWorld)
-	{
-		UE_LOG(LogTemp, Error, TEXT(" AVoxelChunck::RemoveVoxel(int X, int Y, int Z) --> ChunckManager ou VoxelWorld invalide"));
-		return;
-	}
+	FIntVector G = Coord * Size + FIntVector(X, Y, Z);
+	FVoxelDataStructure VoxelAir;
+	VoxelAir.Material.Id = 0;
+	ChunckManager->SetVoxelAt(G, VoxelAir);
+	/*
 	FChunckDataStructure* ChunckData = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
 	if (!ChunckData)
 	{
 		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::RemoveVoxel(int X, int Y, int Z): ChunckData non trouvé pour coord %s"), *Coord.ToString());
+		return;
 	}
 	int index = X + Y * Size + Z * Size * Size;
+	if (FChunkEditLayer* Layer = ChunckManager->VoxelWorld->EditLayers.Find(Coord))
+	{
+		Layer->Edits.Find(index)->Material.Id = 0;
+	}
 	ChunckData->Voxels[index].Material.Id = 0;
 
 	bIsDirty = true;
@@ -200,5 +211,6 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 	if (Y == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 1, 0));
 
 	if (Z == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, -1));
-	if (Z == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, 1));	
+	if (Z == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, 1));
+	*/
 }

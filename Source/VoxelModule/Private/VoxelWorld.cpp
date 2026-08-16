@@ -10,9 +10,9 @@
 // Sets default values
 AVoxelWorld::AVoxelWorld()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-	ChunckManager = nullptr;
+    // Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+    PrimaryActorTick.bCanEverTick = true;
+    ChunckManager = nullptr;
 
 }
 
@@ -45,13 +45,13 @@ void AVoxelWorld::BeginPlay()
 // Called every frame
 void AVoxelWorld::Tick(float DeltaTime)
 {
-	Super::Tick(DeltaTime);
+    Super::Tick(DeltaTime);
 
 }
 
 void AVoxelWorld::GenerateWorld()
 {
-    
+
     int WorldSizeX = 10;
     int WorldSizeY = 10;
     int WorldSizeZ = 10;
@@ -75,18 +75,18 @@ void AVoxelWorld::GenerateWorld()
             }
         }
     }
-    
+
 }
 
 
 FORCEINLINE int AVoxelWorld::GetVoxelIndex(int x, int y, int z)
 {
-	return x + ChunckSize * (y + ChunckSize * z);
+    return x + ChunckSize * (y + ChunckSize * z);
 }
 
 FVoxelDataStructure& AVoxelWorld::GetVoxel(FChunckDataStructure& Chunk, int x, int y, int z)
 {
-	return Chunk.Voxels[GetVoxelIndex(x, y, z)];
+    return Chunk.Voxels[GetVoxelIndex(x, y, z)];
 }
 
 void AVoxelWorld::ProcessDirtyChunks()

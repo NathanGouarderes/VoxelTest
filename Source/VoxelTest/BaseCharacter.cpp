@@ -104,8 +104,6 @@ void ABaseCharacter::Move(const FInputActionValue& Value)
 
 	const FVector2D Axis = Value.Get<FVector2D>();
 	const FRotator YawOnly(0.f, Controller->GetControlRotation().Yaw, 0.f);
-	UE_LOG(LogTemp, Warning, TEXT("ABaseCharacter::Move --> %s"), *Axis.ToString());
-
 
 	AddMovementInput(YawOnly.RotateVector(FVector::ForwardVector), Axis.Y);
 	AddMovementInput(YawOnly.RotateVector(FVector::RightVector), Axis.X);

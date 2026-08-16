@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "FChunckDataStructure.h"
 #include "EChunkVariant.h"
+#include "../../VoxelModule/Public/Structs/FChunkEditLayer.h"
 #include "FastNoiseLite.h"
 class AChunckManager;
 
@@ -21,6 +22,9 @@ struct FChunkGenJob
 	float CaveFrequency = 0.01f;
 	float CaveThreshold = 0.5f;
 	int32 SeaLevel = 24;
+	TMap<int32, FVoxelDataStructure> Edits;
+	TArray<FVoxelBrushOp> BrushOps;
+
 	FastNoiseLite SurfaceNoise;
 	FastNoiseLite CaveNoise;
 
