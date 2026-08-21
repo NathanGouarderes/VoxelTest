@@ -267,4 +267,16 @@ int32 MaxConcurrentLODTransitions = 512;
 	int PendingMeshClusterCount;
 	int PendingClusterGenCount;
 
+TQueue<FIntVector> PendingTransitionQueueCritical;
+TQueue<FIntVector> PendingSpawnQueueCritical;
+TQueue<FIntVector> ChunckGenerationQueueCritical;
+TQueue<FChunkGenJob, EQueueMode::Mpsc> ChunckGenerationJobQueueCritical;
+TQueue<FIntVector> PendingMeshToApplyCritical;
+
+TSet<FIntVector> CriticalSet;
+FVector SmoothedVelocity;
+UPROPERTY(EditAnywhere) float CriticalHorizonSeconds = 0.8f;
+UPROPERTY(EditAnywhere) int32 MaxCriticalRadiusChunks = 8;
+UPROPERTY(EditAnywhere) int32 MaxCriticalTransitionsInFlight = 32;
+
 };
