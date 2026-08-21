@@ -1395,10 +1395,22 @@ void AChunckManager::BuildStreamingQueues(const TMap <FIntVector, int32>& Desire
         }
         else if (*CurrentLOD != LOD)
         {
-            if (!PendingTransitionSet.Contains(Coord)) // ← borne la file
+            if (!PendingTransitionSet.Contains(Coord))
             {
                 PendingTransitionQueue.Enqueue(Coord);
                 PendingTransitionSet.Add(Coord);
+            }
+        }
+        if(!PendingSpawnSet.Contains(Coord))
+        {
+            PendingTransitionSet.Add(Coord);
+            if(IsCritical(Coord))
+            {
+                PendingTransitionQueueCritical.Enqueue(Coord);
+            }
+            else
+            {
+                PendingTransitionQueue.Enqueue(Coord);
             }
         }
 
@@ -2332,4 +2344,68 @@ void AChunckManager::TestCoords()
             TEXT("G=(%5d,%5d,%5d) -> CC=(%3d,%3d,%3d) local=(%3d,%3d,%3d) idx0=%d"),
             G.X, G.Y, G.Z, CC.X, CC.Y, CC.Z, lx, ly, lz, Idx0);
     }
+}
+
+void AChunckManager::UpdateSmoothedVelocity(DeltaTime)
+{
+    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    if (!Pawn)
+    {
+        SmoothedVelocity = FVector::ZeroVector;
+        return;
+    }
+
+    FVector Pos = Pawn->GetActorLocation();
+    float InstantSpeed = Pawn->GetVelocity();
+    SmoothedVelocity = FMath::VInterpTo(SmoothedVelocity, InstantSpeed,
+                                     DeltaTime, 4.0f);
+}
+
+
+int AChunckManager::ComputeCriticalRadiusChunks() const
+{
+    int ChunkExtendCentimeter = ChunkSize * VoxelSize;
+    DistanceTraveled =  SmoothedVelocity.Size() * CriticalHorizonSeconds;
+    int RayonCm = DistanceParcourue + ChunkExtentCm;
+    int RayonChunks = CeilToInt(RayonCm / ChunkExtentCm);
+    return FMath::Clamp(RayonChunks, 2, MaxCriticalRadiusChunks);
+}
+
+void AChunckManager::RebuildCriticalSet()
+{
+    CriticalSet.Reset();
+    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    if (!Pawn)
+    {
+        return;
+    }
+    FVector Pos = Pawn->GetActorLocation();
+    FVector PredictedP = P + SmoothedVelocity * CriticalHorizonSeconds;
+    int R  = ComputeCriticalRadiusChunks();
+    RZ ← FMath::Max(1, R / 2);
+    TArray<FIntVector, TInlineAllocator<2>> Centers;
+    Centers.Add()GetPlayerChunck(Pos);
+    const FIntVector PredictedChunk = GetPlayerChunck(PredictedP);
+    if(PredictedChunk != Centers[0])
+    {
+        Centers.Add(PredictedChunk);
+    }
+    for (const FIntVector& C : Centers)
+    {
+        for (int32 dx = -R; dx <= R; ++dx)
+        {
+            for (int32 dy = -R; dy <= R; ++dy)
+            {
+                if (dx * dx + dy * dy > RSq) continue;
+
+                for (int32 dz = -RZ; dz <= RZ; ++dz)
+                {
+                    const FIntVector Coord = C + FIntVector(dx, dy, dz);
+                    if (IsChunkGuaranteedEmpty(Coord)) continue;
+                    CriticalSet.Add(Coord);
+                }
+            }
+        }
+    }
+
 }
