@@ -48,7 +48,6 @@ void AChunckManager::BeginPlay()
 {
     Super::BeginPlay();
     GetWorld()->GetTimerManager().SetTimer(SafeSpawnTimer, this, &AChunckManager::TrySafeSpawn, 0.2f, true);
-
     {
         TArray<AActor*> Mgrs;
         UGameplayStatics::GetAllActorsOfClass(GetWorld(), AChunckManager::StaticClass(), Mgrs);
@@ -73,6 +72,7 @@ void AChunckManager::BeginPlay()
             Destroy();
             return;   // surtout PAS de workers ni d'init sur un doublon
         }
+
     }
 
     NumThreads = FPlatformMisc::NumberOfCoresIncludingHyperthreads();
@@ -82,6 +82,48 @@ void AChunckManager::BeginPlay()
 
 
     InitNoise();
+    TerrainConfig = MakeShared<FTerrainConfig, ESPMode::ThreadSafe>();
+    FTerrainConfig& Cfg = *TerrainConfig;
+    Cfg.Global.BaseHeight = 408;
+    Cfg.Global.MasterSeed = 1337;
+    Cfg.Global.CaveFrequency = 0.038f;
+    Cfg.Global.CaveThreshold = 0.42f;
+    Cfg.Global.WarpStrength = 0.0f;
+    Cfg.Global.BaseHeight = BaseHeight;
+    Cfg.Global.MasterSeed = 1337;
+    Cfg.Global.CaveFrequency = 0.038;
+    Cfg.Global.CaveThreshold = 0.42;    
+
+    FTerrainLayer Base;
+    Base.Type = ETerrainLayerType::Fractal;
+    Base.Wavelength = 2500.0f;
+    Base.Amplitude = 600.0f;
+    Base.Octaves = 5;
+    Base.SeedOffset = 100;
+    Base.Weight = 1;
+    Cfg.Layers.Add(Base);
+    FTerrainLayer Ridged;
+    Ridged.Type = ETerrainLayerType::Ridged;
+    Ridged.Amplitude = 800;
+    Ridged.Gain = 0.6;
+    Ridged.Octaves = 5;
+    Ridged.SeedOffset = 200;
+    Ridged.Weight = 0.001;
+    Ridged.Wavelength = 25000;
+    Cfg.Layers.Add(Ridged);
+
+    FTerrainLayer Plaine;
+    Plaine.Type = ETerrainLayerType::Fractal;
+    Plaine.Amplitude = 5;
+    Plaine.Gain = 0.6;
+    Plaine.Octaves = 2;
+    Plaine.SeedOffset = 205;
+    Plaine.Weight = 0.01;
+    Ridged.Wavelength = 25000;
+    Cfg.Layers.Add(Plaine);
+
+    TerrainGenerator.SetConfig(TerrainConfig);
+
 
     UE_LOG(LogTemp, Warning, TEXT("=== TERRAIN : Wavelength=%.1f  Amplitude=%.1f  BaseHeight=%d ==="),
         SurfaceWavelength, SurfaceAmplitude, BaseHeight);
@@ -111,7 +153,7 @@ void AChunckManager::BeginPlay()
             if (!Pawn) return;
 
             FVector Pos = Pawn->GetActorLocation();
-            Pos.Z = (BaseHeight + SurfaceAmplitude) * VoxelSize + 500.0f; // 🔥 hauteur safe
+            Pos.Z = (BaseHeight + SurfaceAmplitude) * VoxelSize + 300.0f; // 🔥 hauteur safe
 
             Pawn->SetActorLocation(Pos, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -361,6 +403,8 @@ void AChunckManager::FillChunck(EChunkVariant Variant, FIntVector Coord, int32 L
             Job.BrushOps = Layer->BrushOps;
         }
     }
+    Job.SharedFTerrainConfig = TerrainConfig;
+    TelemetryStamp(Coord, &FChunkJobTelemetry::TEnqueue, FPlatformTime::Seconds());
     ChunckGenerationJobQueue.Enqueue(Job);
 }
 
@@ -493,6 +537,7 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
             // Aucune surcouche necessaire, c'est le comportement voulu pour un chunk seul.
             static const TArray<uint8> EmptyMask;
             Mgr->GenerateGreedyMeshVolume(MeshData, Padded, EmptyMask, SX, SX, SX, EVS);
+            Mgr->TelemetryStamp(Coord, &FChunkJobTelemetry::TMeshed, FPlatformTime::Seconds());
 
             AsyncTask(ENamedThreads::GameThread,
                 [WeakManager, WeakChunk, MeshData = MoveTemp(MeshData), Coord, CapturedGenerationId]() mutable
@@ -521,6 +566,9 @@ void AChunckManager::GenerateAsyncGreedyMesh(FIntVector Coord)
                         // A l'INTERIEUR de la garde : la notification ne vaut que si
                         // le mesh a reellement ete applique.
                         WeakChunk->ApplyMesh(MoveTemp(MeshData));
+                        Manager->TelemetryStamp(Coord, &FChunkJobTelemetry::TApplied, FPlatformTime::Seconds());
+                        Manager->TelemetryReportAndClear(Coord, 0);
+                        Manager->NotifyDisplayApplied(Coord);
                         Manager->NotifyDisplayApplied(Coord);
                     }
                 });
@@ -532,16 +580,16 @@ int32 AChunckManager::GetNbChunkForLOD(int32 LOD) const
     switch (LOD) { case 1: return 1; case 2: return 4; case 3: return 8; default: return 1; }
 }
 
-bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
+uint8 AChunckManager::SampleGlobalVoxelMaterialNoLock(int32 GX, int32 GY, int32 GZ)
 {
-    if (!VoxelWorld) return false;
+    if (!VoxelWorld) return 0;
 
     const FIntVector CC(FloorDivInt(GX, ChunkSize),
-                        FloorDivInt(GY, ChunkSize),
-                        FloorDivInt(GZ, ChunkSize));
+        FloorDivInt(GY, ChunkSize),
+        FloorDivInt(GZ, ChunkSize));
 
     const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
-    if (!D || D->Voxels.Num() == 0) return false;
+    if (!D || D->Voxels.Num() == 0) return 0;
 
     const int32 SubSize = ChunkSize >> D->LOD;
     const int32 lx = (GX - CC.X * ChunkSize) >> D->LOD;
@@ -549,8 +597,8 @@ bool AChunckManager::SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ)
     const int32 lz = (GZ - CC.Z * ChunkSize) >> D->LOD;
 
     const int32 idx = lx + ly * SubSize + lz * SubSize * SubSize;
-    if (!D->Voxels.IsValidIndex(idx)) return false;
-    return D->Voxels[idx].Material.Id > 0;
+    if (!D->Voxels.IsValidIndex(idx)) return 0;
+    return D->Voxels[idx].Material.Id;
 }
 
 bool AChunckManager::BuildChunkPaddedVolumeNoLock(FIntVector Coord, int32 LOD, int32 SubSize,
@@ -694,13 +742,15 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
                         const int32 vidx = (ox >> D->LOD)
                             + (oy >> D->LOD) * SubSizeD
                             + (oz >> D->LOD) * SubSizeD * SubSizeD;
-                        if (!D->Voxels.IsValidIndex(vidx) || D->Voxels[vidx].Material.Id == 0)
+                        if (!D->Voxels.IsValidIndex(vidx))
                             continue;
+                        uint8 MaterialId = D->Voxels[vidx].Material.Id;
+                        if (MaterialId == 0) continue;
 
                         const int32 px = baseDX + lx + 1;
                         const int32 py = baseDY + ly + 1;
                         const int32 pz = lz + 1;
-                        OutVolume[(baseDX + lx + 1) + (baseDY + ly + 1) * PX + (lz + 1) * PX * PY].Material.Id = 1;
+                        OutVolume[(baseDX + lx + 1) + (baseDY + ly + 1) * PX + (lz + 1) * PX * PY].Material.Id = MaterialId;
                     }
         }
 
@@ -710,8 +760,8 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
     //       le mesher produirait un PLAN DE FRONTIÈRE PLEIN (fausse surface superposée).
     if (LOD == 1 && IncludedChunks > 0 && IncludedChunks < NbChunk * NbChunk)
     {
-        UE_LOG(LogTemp, Warning, TEXT("BUILD T1 (%d,%d,%d) : %d/%d chunks inclus"),
-            ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, IncludedChunks, NbChunk * NbChunk);
+        //UE_LOG(LogTemp, Warning, TEXT("BUILD T1 (%d,%d,%d) : %d/%d chunks inclus"),
+            //ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, IncludedChunks, NbChunk * NbChunk);
     }
 
     if (IncludedChunks == 0)
@@ -732,8 +782,9 @@ bool AChunckManager::BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD
                 const int32 GX = BaseGX + (px - 1) * StepCluster;
                 const int32 GY = BaseGY + (py - 1) * StepCluster;
                 const int32 GZ = BaseGZ + (pz - 1) * StepCluster;
-                if (SampleGlobalVoxelSolidNoLock(GX, GY, GZ))
-                    OutVolume[px + py * PX + pz * PX * PY].Material.Id = 1;
+                uint8 Id = SampleGlobalVoxelMaterialNoLock(GX, GY, GZ);
+                if (Id != 0)
+                    OutVolume[px + py * PX + pz * PX * PY].Material.Id = Id;
             }
 
     return true;
@@ -747,6 +798,7 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
     TRealtimeMeshBuilderLocal<uint32, FPackedNormal, FVector2DHalf, 1> Builder(OutMesh.Streams);
     Builder.EnableTangents();
     Builder.EnableTexCoords();
+    Builder.EnableColors();
     int32 QuadCount = 0;
     const int32 PX = SX + 2, PY = SY + 2, PZ = SZ + 2;
     const int32 Dims[3] = { SX, SY, SZ };
@@ -765,6 +817,15 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
             if (ix < 0 || ix >= PX || iy < 0 || iy >= PY || iz < 0 || iz >= PZ) return false;
             const int32 idx = ix + iy * PX + iz * PX * PY;
             return MaskVol.IsValidIndex(idx) && MaskVol[idx] != 0;
+        };
+
+    auto MaterialAt = [&](int32 x, int32 y, int32 z) -> uint8
+        {
+            const int32 ix = x + 1, iy = y + 1, iz = z + 1;
+            if (ix < 0 || ix >= PX || iy < 0 || iy >= PY || iz < 0 || iz >= PZ) return 0;
+            const int32 idx = ix + iy * PX + iz * PX * PY;
+            if (!Pad.IsValidIndex(idx)) return 0;
+            return Pad[idx].Material.Id;
         };
 
     for (int32 Axis = 0; Axis < 3; ++Axis)
@@ -792,8 +853,8 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                         IsMasked(Iter[0] + q[0], Iter[1] + q[1], Iter[2] + q[2]))
                         Mask[N++] = FMask{ 0, 0 };
                     else if (a == b) Mask[N++] = FMask{ 0, 0 };
-                    else if (a)      Mask[N++] = FMask{ 1, 1 };
-                    else             Mask[N++] = FMask{ 1, -1 };
+                    else if (a)      Mask[N++] = FMask{ MaterialAt(Iter[0], Iter[1], Iter[2] ), 1};
+                    else             Mask[N++] = FMask{ MaterialAt(Iter[0] + q[0], Iter[1] + q[1], Iter[2] + q[2]), -1};
                 }
 
             N = 0;
@@ -804,6 +865,7 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                     if (Mask[N].Normal != 0)
                     {
                         const FMask CurrentMask = Mask[N];
+                        
                         int32 W = 1;
                         while (i + W < Dims[A1] && CompareMask(Mask[N + W], CurrentMask)) ++W;
                         int32 H = 1; bool Done = false;
@@ -823,13 +885,13 @@ void AChunckManager::GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
                         const FVector3f N3f(Normal);
                         int32 Idx[4];
                         Idx[0] = Builder.AddVertex(FVector3f(V1[0], V1[1], V1[2]) * EVS + OriginOffset)
-                            .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(0.f, 0.f));
+                            .SetNormalAndTangent(N3f, T3f).SetColor(FColor(255, 255, 255, CurrentMask.Block)).SetTexCoord(FVector2f(0.f, 0.f));
                         Idx[1] = Builder.AddVertex(FVector3f(V2[0], V2[1], V2[2]) * EVS + OriginOffset)
-                            .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(W, 0.f));
+                            .SetNormalAndTangent(N3f, T3f).SetColor(FColor(255, 255, 255, CurrentMask.Block)).SetTexCoord(FVector2f(W, 0.f));
                         Idx[2] = Builder.AddVertex(FVector3f(V3[0], V3[1], V3[2]) * EVS + OriginOffset)
-                            .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(0.f, H));
+                            .SetNormalAndTangent(N3f, T3f).SetColor(FColor(255, 255, 255, CurrentMask.Block)).SetTexCoord(FVector2f(0.f, H));
                         Idx[3] = Builder.AddVertex(FVector3f(V4[0], V4[1], V4[2]) * EVS + OriginOffset)
-                            .SetNormalAndTangent(N3f, T3f).SetTexCoord(FVector2f(W, H));
+                            .SetNormalAndTangent(N3f, T3f).SetColor(FColor(255, 255, 255, CurrentMask.Block)).SetTexCoord(FVector2f(W, H));
 
                         int32 Dir = CurrentMask.Normal;   // ±1
                         Builder.AddTriangle(Idx[0], Idx[2 + Dir], Idx[2 - Dir]);
@@ -894,9 +956,9 @@ bool AChunckManager::TryDispatchClusterMesh(FIntVector ClusterCoord, int32 LOD)
                     else
                     {
                         // Log temporaire : chaque tir prouve que la course existait.
-                        UE_LOG(LogTemp, Warning, TEXT("Cluster (%d,%d,%d) T%d : mesh périmé jeté (v%d, courant v%d)"),
-                            ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, LOD,
-                            MyVersion, VMap.FindRef(ClusterCoord));
+                        //UE_LOG(LogTemp, Warning, TEXT("Cluster (%d,%d,%d) T%d : mesh périmé jeté (v%d, courant v%d)"),
+                            //ClusterCoord.X, ClusterCoord.Y, ClusterCoord.Z, LOD,
+                            //MyVersion, VMap.FindRef(ClusterCoord));
                     }
                     M->CurrentClusterMeshJob = FMath::Max(0, M->CurrentClusterMeshJob - 1);
                 });
@@ -923,6 +985,7 @@ void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, 
 
     const FRealtimeMeshSectionGroupKey GroupKey =
         FRealtimeMeshSectionGroupKey::Create(FRealtimeMeshLODKey(0), FName("Cluster"));
+    
 
     // Les chunks de cette empreinte qui attendaient leur nouvelle representation
     // viennent de l'obtenir. DOIT etre appele sur TOUS les chemins de sortie.
@@ -950,6 +1013,7 @@ void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, 
         NotifyFootprint();
         return;
     }
+    
 
     if (!RMC)
     {
@@ -969,6 +1033,10 @@ void AChunckManager::ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, 
         if (URealtimeMeshSimple* NewMesh = RMC->InitializeRealtimeMesh<URealtimeMeshSimple>())
         {
             NewMesh->SetupMaterialSlot(0, TEXT("Cluster"), ClusterMaterial);
+        }
+        if (URealtimeMeshSimple* NewMesh = RMC->InitializeRealtimeMesh<URealtimeMeshSimple>())
+        {
+            NewMesh->SetupMaterialSlot(0, TEXT("Voxel"), VoxelMaterial);
         }
 
         Pool->Add(ClusterCoord, RMC);
@@ -1265,12 +1333,17 @@ void AChunckManager::ProcessGenerationResults()
             else continue;
         }
 
-        if (bReadyToCommit) PendingCommitSet.Add(Result.Coord);
+        if (bReadyToCommit)
+        {
+            PendingCommitSet.Add(Result.Coord);
+            TelemetryStamp(Result.Coord, &FChunkJobTelemetry::TCommited, FPlatformTime::Seconds());
+        }
 
         if (bAccepted)                                    // bloc, PAS un continue
         {
             if (ResultLOD == 0)
             {
+                TelemetryStamp(Result.Coord, &FChunkJobTelemetry::TResultConsumed, FPlatformTime::Seconds());
                 if (bSelfDirty) DirtyChuncks.Add(Result.Coord);
                 for (const FIntVector& N : ExistingNeighbors) DirtyChuncks.Add(N);
             }
@@ -1343,6 +1416,7 @@ void AChunckManager::ProcessMeshJobs()
         FIntVector Coord;
         if (!PendingMeshToApply.Dequeue(Coord)) break;
         ++CurrentMeshJob;                 // réserve le slot ; GenerateAsyncGreedyMesh le rend sur TOUS ses chemins
+        TelemetryStamp(Coord, &FChunkJobTelemetry::TMeshDispatched, FPlatformTime::Seconds());
         GenerateAsyncGreedyMesh(Coord);
     }
 }
@@ -1371,10 +1445,10 @@ void AChunckManager::ProcessPendingClusters()
     if (Now - LastDiag > 10.0)
     {
         LastDiag = Now;
-        UE_LOG(LogTemp, Warning,
-            TEXT("CLUSTERS pending T1=%d T2=%d T3=%d | dispatches=%d | jobs chunk=%d/%d cluster=%d/%d"),
-            PendingClusterTier1.Num(), PendingClusterTier2.Num(), PendingClusterTier3.Num(),
-            Dispatched, CurrentMeshJob, MaxMeshJob, CurrentClusterMeshJob, EffectiveClusterBudget);
+       // UE_LOG(LogTemp, Warning,
+           // TEXT("CLUSTERS pending T1=%d T2=%d T3=%d | dispatches=%d | jobs chunk=%d/%d cluster=%d/%d"),
+            //PendingClusterTier1.Num(), PendingClusterTier2.Num(), PendingClusterTier3.Num(),
+            //Dispatched, CurrentMeshJob, MaxMeshJob, CurrentClusterMeshJob, EffectiveClusterBudget);
     }
 }
 bool AChunckManager::UpdatePlayerChunkState()
@@ -1565,46 +1639,9 @@ bool AChunckManager::IsChunkGuaranteedEmpty(const FIntVector& Coord) const
 {
     // Bas du chunk en voxels-monde. Marge d'un chunk pour absorber tout dépassement de bruit/octaves.
     const int32 ChunkMinZVoxel = Coord.Z * ChunkSize;
-    const int32 MaxSurfaceVoxel = BaseHeight + FMath::CeilToInt(SurfaceAmplitude) + ChunkSize;
-    return ChunkMinZVoxel >= MaxSurfaceVoxel;   // tout le chunk est au-dessus de toute surface possible
+    const int32 MaxSurfaceVoxel = FMath::CeilToInt(TerrainGenerator.GetMaxPossibleHeight()) + ChunkSize;
+    return Coord.Z * ChunkSize >= MaxSurfaceVoxel;   // tout le chunk est au-dessus de toute surface possible
 }
-
-/*
-void AChunckManager::InvalidateCluster(FIntVector ClusterCoord, int32 LOD)
-{
-    if (LOD < 1) return;
-
-    // 1) Effacement immédiat : c'est LE point qui manquait. Ne dépend d'aucun budget,
-    //    d'aucun readiness, d'aucun job async. Suppression garantie, comme un Destroy().
-    TMap<FIntVector, UStaticMeshComponent*>* Pool =
-        (LOD == 1) ? &ClusterPoolTier1 : (LOD == 2) ? &ClusterPoolTier2 : &ClusterPoolTier3;
-    if (UStaticMeshComponent** Found = Pool->Find(ClusterCoord))
-        //if (UStaticMeshComponent* SMC = *Found)
-            //SMC->SetStaticMesh(nullptr);
-
-    // 2) Bump de version : sans ça, un job parti AVANT cet effacement pourrait arriver
-    //    APRÈS et ré-appliquer la géométrie périmée par-dessus la section vidée.
-    TMap<FIntVector, int32>& VMap =
-        (LOD == 1) ? ClusterMeshVersionTier1 :
-        (LOD == 2) ? ClusterMeshVersionTier2 : ClusterMeshVersionTier3;
-    ++VMap.FindOrAdd(ClusterCoord);
-
-    // 3) Reconstruction demandée (peut prendre plusieurs frames — le trou est visible, tant mieux).
-    if (LOD == 1) {
-        PendingClusterTier1.Add(ClusterCoord);
-        PendingMeshClusterCount += 1;
-    }
-    else if (LOD == 2) {
-        PendingMeshClusterCount += 1;
-        PendingClusterTier2.Add(ClusterCoord);
-    }
-    else {
-        PendingMeshClusterCount += 1;
-        PendingClusterTier3.Add(ClusterCoord);
-    }
-}
-
-*/
 
 void AChunckManager::ProcessLODCommits()
 {
@@ -1745,9 +1782,10 @@ void AChunckManager::ProcessLODWatchdog()
 
     for (const FIntVector& Coord : TimedOut)
     {
-        UE_LOG(LogTemp, Warning, TEXT("LOD WATCHDOG (%d,%d,%d) : libération forcée après %.1fs"),
-            Coord.X, Coord.Y, Coord.Z, LODSwapWatchdogSeconds);
+        //UE_LOG(LogTemp, Warning, TEXT("LOD WATCHDOG (%d,%d,%d) : libération forcée après %.1fs"),
+            //Coord.X, Coord.Y, Coord.Z, LODSwapWatchdogSeconds);
         NotifyDisplayApplied(Coord);
+        
     }
 }
 
@@ -1771,7 +1809,7 @@ void AChunckManager::NukeClusters()
     ClusterHasGroupTier2.Empty();
     ClusterHasGroupTier3.Empty();
 
-    UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vides (manager %s)"), Cleared, *GetName());
+    //UE_LOG(LogTemp, Warning, TEXT("NukeClusters : %d composants vides (manager %s)"), Cleared, *GetName());
 }
 
 void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeters)
@@ -1884,7 +1922,7 @@ int32 AChunckManager::VoxelGlobalToLocalIndex0(FIntVector G, FIntVector CC)
     int32 ly = G.Y - CC.Y * ChunkSize;
     int32 lz = G.Z - CC.Z * ChunkSize;
 
-    if (lx < 0 || lx >= ChunkSize || ly < ChunkSize &&ly >= 0  || lz < ChunkSize && lz >= 0)
+    if (lx < 0 || lx >= ChunkSize || ly < 0  || ly >= ChunkSize || lz < 0 || lz >= ChunkSize)
     {
         UE_LOG(LogTemp, Error, TEXT("AChunckManager::VoxelGlobalToLocalIndex0 --> lx >= 0 && lx < ChunkSize || ly >= 0 && ly < ChunkSize || lz >= 0 && lz < ChunkSize"));
     }
@@ -1907,13 +1945,8 @@ bool AChunckManager::SetVoxelAtNoLock(const FIntVector& VoxelGlobal,
     const int32      Idx0 = VoxelGlobalToLocalIndex0(VoxelGlobal, CC);
 
     // --- 1) Couche d'edition : la verite persistante ---------------------
-    const bool BaseSolid = ChunckGenWorker::EvaluateNoiseSolid(
-        VoxelGlobal.X, VoxelGlobal.Y, VoxelGlobal.Z,
-        SurfaceNoise, CaveNoise,
-        SurfaceWavelength, SurfaceAmplitude, BaseHeight,
-        CaveFrequency, CaveThreshold);
 
-    const uint8 BaseId = ChunckGenWorker::EvaluateNoiseMaterial(BaseSolid);
+    const uint8 BaseId = TerrainGenerator.MaterialIdAt(TerrainGenerator.ComputeHeight((float)VoxelGlobal.X, (float)VoxelGlobal.Y), VoxelGlobal.X, VoxelGlobal.Y, VoxelGlobal.Z);
 
     if (NewValue.Material.Id == BaseId)
     {
@@ -1933,7 +1966,7 @@ bool AChunckManager::SetVoxelAtNoLock(const FIntVector& VoxelGlobal,
     else
     {
         FChunkEditLayer& Layer = VoxelWorld->EditLayers.FindOrAdd(CC);
-        Layer.Edits.Add(Idx0, NewValue);   // Add ecrase si la cle existe deja
+        Layer.Edits.Add(Idx0, NewValue);   // Add ecrase si la cle existe deja FAUDRA AJOUTER DES MODIFICATIONS AUX EXTREMITES DES SPEHERES/RAYONS POUR PASSER LE SABLE EN VERRE...
         ++Layer.Revision;
     }
 
@@ -1984,7 +2017,7 @@ void AChunckManager::SetVoxelAt(const FIntVector& VoxelGlobal, const FVoxelDataS
     {
         TMap<FIntVector, int32> Touched;
         Touched.Add(CC, LOD);
-        NathanDebug(TEXT("Chunk touché par setVoxel : X : %d, Y : %d, Z : %d au LOD %d"), CC.X, CC.Y, CC.Z, LOD);
+        //NathanDebug(TEXT("Chunk touché par setVoxel : X : %d, Y : %d, Z : %d au LOD %d"), CC.X, CC.Y, CC.Z, LOD);
         DispatchChunkRebuilds(Touched);
     }
 }
@@ -2004,7 +2037,7 @@ void AChunckManager::DispatchChunkRebuilds(const TMap<FIntVector, int32>& Touche
         FScopeLock Lock(&VoxelWorld->ChunckMutex);
         for (const TPair<FIntVector, int32>& P : TouchedChunks)
         {
-            NathanDebug(TEXT("TouchedChunks : X : %d, Y : %d, Z : %d au LOD %d"), P.Key.X, P.Key.Y, P.Key.Z, P.Value);
+            //NathanDebug(TEXT("TouchedChunks : X : %d, Y : %d, Z : %d au LOD %d"), P.Key.X, P.Key.Y, P.Key.Z, P.Value);
             for (const FIntVector& Dir : Dirs)
             {
                 const FIntVector NC = P.Key + Dir;
@@ -2033,7 +2066,7 @@ void AChunckManager::SetVoxel(int32 gx, int32 gy, int32 gz, int32 MaterialId)
     V.Material.Id = (uint8)MaterialId;
     SetVoxelAt(FIntVector(gx, gy, gz), V);
 
-    UE_LOG(LogTemp, Warning, TEXT("SetVoxel (%d,%d,%d) = %d"), gx, gy, gz, MaterialId);
+    //UE_LOG(LogTemp, Warning, TEXT("SetVoxel (%d,%d,%d) = %d"), gx, gy, gz, MaterialId);
 }
 
 void AChunckManager::TestCoords()
@@ -2052,9 +2085,9 @@ void AChunckManager::TestCoords()
         const int32 ly = G.Y - CC.Y * ChunkSize;
         const int32 lz = G.Z - CC.Z * ChunkSize;
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("G=(%5d,%5d,%5d) -> CC=(%3d,%3d,%3d) local=(%3d,%3d,%3d) idx0=%d"),
-            G.X, G.Y, G.Z, CC.X, CC.Y, CC.Z, lx, ly, lz, Idx0);
+        //UE_LOG(LogTemp, Warning,
+            //TEXT("G=(%5d,%5d,%5d) -> CC=(%3d,%3d,%3d) local=(%3d,%3d,%3d) idx0=%d"),
+            //G.X, G.Y, G.Z, CC.X, CC.Y, CC.Z, lx, ly, lz, Idx0);
     }
 }
 
@@ -2115,4 +2148,41 @@ bool AChunckManager::ApplyBrushOp(TArray<FVoxelDataStructure>& Voxels,
     }
     return bModified;
 
+}
+
+void AChunckManager::TelemetryStamp(const FIntVector& Coord,
+    double FChunkJobTelemetry::* Field,
+    double Value)
+{
+    FScopeLock Lock(&TelemetryMutex);
+
+    // Garde-fou : sans purge, la map gonfle indéfiniment en 40x10.
+    if (JobTelemetryMap.Num() > 50000)
+    {
+        UE_LOG(LogTemp, Error, TEXT("TELEMETRY : purge (%d entrees)"), JobTelemetryMap.Num());
+        JobTelemetryMap.Empty();
+    }
+
+    JobTelemetryMap.FindOrAdd(Coord).*Field = Value;
+}
+
+void AChunckManager::TelemetryReportAndClear(const FIntVector& Coord, int32 LOD)
+{
+    FChunkJobTelemetry T;
+    {
+        FScopeLock Lock(&TelemetryMutex);
+        const FChunkJobTelemetry* Found = JobTelemetryMap.Find(Coord);
+        if (!Found) return;
+        T = *Found;
+        JobTelemetryMap.Remove(Coord);   // entree consommee : pas de fuite
+    }
+
+    // Chaine incomplete (chunk arrive par un chemin non instrumente) : rien a dire.
+    if (T.TEnqueue <= 0.0 || T.TApplied <= 0.0) return;
+
+    const double Total = T.TApplied - T.TEnqueue;
+
+    // Seuil : seuls les cas pathologiques nous interessent. Loguer chaque chunk
+    // saturerait l'I/O et fausserait la mesure elle-meme.
+    if (Total < TelemetryAlertThresholdSeconds) return;
 }

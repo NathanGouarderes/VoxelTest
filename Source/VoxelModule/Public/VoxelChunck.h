@@ -61,9 +61,6 @@ public:
 	UPROPERTY(Transient)
 	TObjectPtr<URealtimeMeshSimple> RealtimeMeshSimple;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Voxel")
-	TObjectPtr<UMaterialInterface> TerrainMaterial;
-
 	bool bHasSectionGroup = false;
 	//TArray<FVoxelDataStructure> VoxelData;
 

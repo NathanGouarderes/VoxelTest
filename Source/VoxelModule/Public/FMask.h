@@ -5,6 +5,6 @@
 
 struct FMask
 {
-	int8 Block = 0;
+	uint8 Block = 0;
 	int8 Normal = 0;
 };

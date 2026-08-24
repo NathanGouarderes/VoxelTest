@@ -6,6 +6,8 @@
 #include "HAL/Runnable.h"
 #include "HAL/Event.h"
 #include "Containers/Queue.h"
+#include "../../VoxelModule/Public/Structs/FTerrainConfig.h"
+#include "Structs/FTerrainGenerator.h"
 #include "FChunckGenJob.h"
 #include "EChunkVariant.h"
 
@@ -23,14 +25,15 @@ public:
 	virtual bool Init() override;
 	virtual uint32 Run() override;
 	virtual void Stop() override;
-	static bool EvaluateNoiseSolid(int32 gx, int32 gy, int32 gz, FastNoiseLite& SurfaceNoise, FastNoiseLite& CaveNoise,
-		float SurfaceAmplitude, float SurfaceWavelength, int32 BaseHeight, float CaveFrequency, float CaveThreshold);
-	static int8 EvaluateNoiseMaterial(bool bIsSolid);
 
 private:
+	void Reconfigure();
+	float ComputeHeight(float WorldX, float WorldY) const;
+
 	FCriticalSection StopMutex;
 	AChunckManager* ChunckManager;
 	TQueue<FChunkGenJob, EQueueMode::Mpsc>& JobQueue;
+	FTerrainGenerator Generator;
 	bool bStopRequest;
 	//FCriticalSection DequeueMutex;
 };

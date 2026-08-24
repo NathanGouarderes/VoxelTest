@@ -35,6 +35,7 @@ struct FChunckDataStructure
 	int32 ReleaseLOD = INDEX_NONE;
 	FIntVector ReleaseClusterCoord = FIntVector::ZeroValue;
 
+
 	double PhaseEnteredTime = 0.0;
 	FChunckDataStructure()
 	{

@@ -6,12 +6,15 @@
 #include "FChunckDataStructure.h"
 #include "EChunkVariant.h"
 #include "../../VoxelModule/Public/Structs/FChunkEditLayer.h"
+#include "../../VoxelModule/Public/Structs/FTerrainConfig.h"
 #include "FastNoiseLite.h"
 class AChunckManager;
 
 struct FChunkGenJob
 {
-	int32 LOD = 0;
+	int32 RenderLOD = 0;
+	int32 CollisionLOD;
+	bool  bNeedsCollision;
 	int32 GenerationId = 0;
 	FIntVector Coord;
 	EChunkVariant Variant;
@@ -25,6 +28,7 @@ struct FChunkGenJob
 	TMap<int32, FVoxelDataStructure> Edits;
 	TArray<FVoxelBrushOp> BrushOps;
 
+	TSharedPtr<const FTerrainConfig, ESPMode::ThreadSafe> SharedFTerrainConfig;
 	FastNoiseLite SurfaceNoise;
 	FastNoiseLite CaveNoise;
 

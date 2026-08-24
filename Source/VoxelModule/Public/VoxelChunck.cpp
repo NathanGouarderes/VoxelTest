@@ -41,7 +41,7 @@ void AVoxelChunck::BeginPlay()
 	RealtimeMeshSimple = RealtimeMeshComponent->InitializeRealtimeMesh<URealtimeMeshSimple>();
 	if (RealtimeMeshSimple)
 	{
-		RealtimeMeshSimple->SetupMaterialSlot(0, TEXT("Terrain"), TerrainMaterial);
+		RealtimeMeshSimple->SetupMaterialSlot(0, TEXT("Voxel"), nullptr);
 		RealtimeMeshSimple->SetCollisionConfig(CollisionConfiguration);
 	}
 
@@ -57,6 +57,10 @@ void AVoxelChunck::Tick(float DeltaTime)
 void AVoxelChunck::SetChunckManager(AChunckManager* Manager)
 {
 	ChunckManager = Manager;
+	if (Manager && Manager->VoxelMaterial && RealtimeMeshComponent)
+	{
+		RealtimeMeshComponent->SetMaterial(0, Manager->VoxelMaterial);
+	}
 }
 
 

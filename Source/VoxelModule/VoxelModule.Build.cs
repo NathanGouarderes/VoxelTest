@@ -20,7 +20,7 @@ public class VoxelModule : ModuleRules
 
         // Si ton module doit exposer des API à l’extérieur :
         PublicDependencyModuleNames.AddRange(
-            new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent", "GeometryFramework", "MeshDescription", "StaticMeshDescription", "RealtimeMeshComponent" }
+            new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent", "GeometryFramework", "MeshDescription", "StaticMeshDescription", "RealtimeMeshComponent", "GameplayTags", "Niagara" }
         );
 
         // Configuration supplémentaire si nécessaire

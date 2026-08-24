@@ -10,6 +10,7 @@
 #include "FChunkMeshResult.h"
 #include "../../VoxelModule/Public/Structs/FChunkEditLayer.h"
 #include "HAL/CriticalSection.h"
+#include "ECollisionState.h"
 #include "VoxelWorld.generated.h"
 
 UCLASS()
@@ -41,7 +42,6 @@ public:
 	TQueue<FChunkMeshResult> MeshUploadQueue;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")
 	AChunckManager* ChunckManager;
-	int32 CurrentLOD = 0;
-	
+	int32 CurrentLOD = 0;	
 
 };

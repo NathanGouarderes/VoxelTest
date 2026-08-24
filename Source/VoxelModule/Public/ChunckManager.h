@@ -10,9 +10,11 @@
 #include "Engine/TimerHandle.h"
 #include "EChunkVariant.h"
 #include "FChunckGenJob.h"
+#include "Structs/FChunkJobTelemetry.h"
 #include "FChunkGenResult.h"
 #include "FClusterGenData.h"
 #include "FMask.h"
+#include "Structs/FTerrainGenerator.h"
 #include "Engine/StaticMesh.h"
 #include "ChunckManager.generated.h"
 
@@ -95,7 +97,7 @@ public:
 
 	// === Cluster volume meshing ===
 	int32 GetNbChunkForLOD(int32 LOD) const;
-	bool SampleGlobalVoxelSolidNoLock(int32 GX, int32 GY, int32 GZ);
+	uint8 SampleGlobalVoxelMaterialNoLock(int32 GX, int32 GY, int32 GZ);
 	bool BuildClusterPaddedVolume(FIntVector ClusterCoord, int32 LOD,
 		TArray<FVoxelDataStructure>& OutVolume, TArray<uint8>& OutMask, int32& OutSX, int32& OutSY, int32& OutSZ);
 	void GenerateGreedyMeshVolume(FChunckMeshData& OutMesh,
@@ -105,6 +107,9 @@ public:
 
 
 	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
+
+	void TelemetryStamp(const FIntVector& Coord, double FChunkJobTelemetry::* Field, double Value);
+	void TelemetryReportAndClear(const FIntVector& Coord, int32 LOD);
 
 	FIntVector WorldToVoxelGlobal(FVector World);
 	FIntVector VoxelGlobalToChunk(FIntVector VoxelLocation);
@@ -176,8 +181,8 @@ public:
 	int ChunkSize = 128;//32;
 
 	//void UpdateVisibleChunks(const FVector& PlayerLocation);
-	int32 HorizontalViewDistance = 40;
-	int32 VerticalViewDistance = 10;
+	int32 HorizontalViewDistance = 10;
+	int32 VerticalViewDistance = 5;
 
 	FTimerHandle SafeSpawnTimer;
 	void TrySafeSpawn();
@@ -222,6 +227,7 @@ public:
 	int32 MaxClusterMeshJob = 3;
 	int32 MaxMeshJob;
 	int32 DesiredLOD;
+	TMap<FIntVector, FChunkJobTelemetry> JobTelemetryMap;
 
 	UPROPERTY() TMap<FIntVector, URealtimeMeshComponent*> ClusterPoolTier1;   // idem Tier2, Tier3
 	UPROPERTY() TMap<FIntVector, URealtimeMeshComponent*> ClusterPoolTier2;
@@ -252,6 +258,8 @@ public:
 	float CaveThreshold;      // plus bas = plus de grottes
 	UPROPERTY(EditAnywhere)
 	int   SeaLevel;         // niveau de la mer (lacs + océan)
+	TSharedPtr<FTerrainConfig, ESPMode::ThreadSafe> TerrainConfig;
+	FTerrainGenerator TerrainGenerator;
 
 int32 NextGenerationId = 1;
 TSet<FIntVector> PendingCommitSet;
@@ -264,6 +272,11 @@ UPROPERTY(EditAnywhere, Category = "Voxel | LOD")
 int32 MaxConcurrentLODTransitions = 512;
 
 int32 NextBrushSeq = 0;
+FCriticalSection TelemetryMutex;
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Voxel")
+TObjectPtr<UMaterialInterface> VoxelMaterial;
+UPROPERTY(EditAnywhere) 
+float TelemetryAlertThresholdSeconds = 0.25f;
 
 
 	std::atomic<bool> bIsShuttingDown;

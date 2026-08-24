@@ -1,7 +1,7 @@
 #include "FChunckGenJob.h"
 #include "ChunckManager.h"
 
-FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD, int32 InGenerationId) : Coord(InCoord), Variant(InVariant), LOD(InLOD),  GenerationId(InGenerationId){
+FChunkGenJob::FChunkGenJob(FIntVector InCoord, EChunkVariant InVariant, AChunckManager* Manager, int32 InLOD, int32 InGenerationId) : Coord(InCoord), Variant(InVariant), RenderLOD(InLOD),  GenerationId(InGenerationId){
     if (Manager)
     {
         ChunkSize = Manager->ChunkSize;
