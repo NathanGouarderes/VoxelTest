@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "FastNoiseLite.h"
+#include "../../Public/VoxelMath.h"
+#include "../../Public/Structs/FHeightMaxPyramid.h"
 #include "FTerrainConfig.h"
 
 /**
@@ -10,6 +12,16 @@
  * Chaque proprietaire (worker, manager) en a une instance privee :
  * aucun partage, donc aucun verrou.
  */
+
+ /** Porte resolue une fois pour toutes dans Reconfigure : FName -> index. */
+struct FResolvedGate
+{
+    int32 FieldIndex = INDEX_NONE;
+    float Low = 0.0f;
+    float High = 0.0f;
+    bool bInvert = false;
+};
+
 class VOXELMODULE_API FTerrainGenerator
 {
 public:
@@ -28,6 +40,11 @@ public:
 
     float ComputeProvince(float WorldX, float WorldY) const;
 
+    uint8 OreIdAt(uint32 h, int32 Depth, int32 gx, int32 gy, int32 gz) const;
+
+    float ComputeLayerPresence(int32 LayerIndex, float SX, float SY, const TArray<float, TInlineAllocator<8>>& Ctrl) const;
+    void DebugLogStats(int32 HalfExtentVoxels, int32 StepVoxels) const;
+
     /** Test plein/vide quand la hauteur est DEJA connue.
      *  Le worker passe par ici : il calcule la hauteur une fois par colonne. */
     bool IsSolidAtHeight(float Height, int32 gx, int32 gy, int32 gz) const;
@@ -39,20 +56,27 @@ public:
     /** Borne haute de toute surface possible. Sert au culling vertical. */
     float GetMaxPossibleHeight() const;
 
-    uint8 MaterialIdAt(const float Province, float Height, int32 gx, int32 gy, int32 gz) const;
+    uint8 MaterialIdAt(const float Province, float Height, int32 gx, int32 gy, int32 gz, int32 LOD) const;
+    float CaveNoiseAt(float gx, float gy, float gz) const;
+    float GetCaveThreshold() const;
+
+    bool GetBaseSpline() const;
 
 private:
     void Reconfigure();
+
 
     TSharedPtr<const FTerrainConfig, ESPMode::ThreadSafe> Config;
     const FTerrainConfig* CachedRaw = nullptr;
 
     TArray<FastNoiseLite> LayersNoise;
     TArray<FastNoiseLite> ControlNoise;
+    TArray<FastNoiseLite> MaskLayersNoise;
     TArray<int32>         LayerControlIndex;
+    TArray<TArray<FResolvedGate, TInlineAllocator<2>>> LayerGates;
     FastNoiseLite         CaveNoiseInst;
     FastNoiseLite         WarpNoiseX;
     FastNoiseLite         WarpNoiseY;
-    FastNoiseLite         ProvinceNoise;     
+    FastNoiseLite         ProvinceNoise;  
     FastNoiseLite         VeinNoise;
 };

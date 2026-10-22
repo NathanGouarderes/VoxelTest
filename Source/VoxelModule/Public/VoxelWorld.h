@@ -11,6 +11,7 @@
 #include "../../VoxelModule/Public/Structs/FChunkEditLayer.h"
 #include "HAL/CriticalSection.h"
 #include "ECollisionState.h"
+#include "Structs/FHeightMaxPyramid.h"
 #include "VoxelWorld.generated.h"
 
 UCLASS()
@@ -30,17 +31,18 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 	void GenerateWorld();
-	FORCEINLINE int GetVoxelIndex(int x, int y, int z);
-	FVoxelDataStructure& GetVoxel(FChunckDataStructure& Chunk, int x, int y, int z);
+	FORCEINLINE int GetVoxelIndex(int x, int y, int z) const;
+	const FVoxelDataStructure& GetVoxel(const FChunckDataStructure& Chunk, int x, int y, int z) const;
 	void ProcessDirtyChunks();
 
-	static constexpr int ChunckSize = 128;
+	static constexpr int ChunckSize = 32;
 
 	TMap<FIntVector, FChunckDataStructure> Chuncks;
 	TMap<FIntVector, FChunkEditLayer> EditLayers;
 	FCriticalSection ChunckMutex;
+	mutable FCriticalSection EditMutex;
 	TQueue<FChunkMeshResult> MeshUploadQueue;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Voxel")
 	AChunckManager* ChunckManager;
 	int32 CurrentLOD = 0;	
 

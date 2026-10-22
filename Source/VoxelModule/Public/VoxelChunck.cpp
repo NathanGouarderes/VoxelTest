@@ -16,7 +16,7 @@ AVoxelChunck::AVoxelChunck()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
-	Size = 128;
+	Size = 32;
 	//VoxelData.SetNum(Size * Size * Size);
 	RealtimeMeshComponent = CreateDefaultSubobject<URealtimeMeshComponent>(TEXT("RealtimeMeshComponent"));
 	SetRootComponent(RealtimeMeshComponent);

@@ -9,7 +9,8 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
-				"Engine"
+				"Engine",
+				"UMG"
 			]
 		},
 		{
@@ -19,7 +20,12 @@
 			"AdditionalDependencies": [
 				"Engine"
 			]
-		}
+		},
+		{
+	         "Name": "VoxelModuleEditor",
+	         "Type": "Editor",
+	         "LoadingPhase": "Default"
+	     }
 	],
 	"Plugins": [
 		{

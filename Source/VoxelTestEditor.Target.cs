@@ -11,5 +11,6 @@ public class VoxelTestEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V7;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
 		ExtraModuleNames.Add("VoxelTest");
+		ExtraModuleNames.Add("VoxelModuleEditor");
 	}
 }

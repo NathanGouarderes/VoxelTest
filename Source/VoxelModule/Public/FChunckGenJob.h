@@ -18,7 +18,7 @@ struct FChunkGenJob
 	int32 GenerationId = 0;
 	FIntVector Coord;
 	EChunkVariant Variant;
-	int32 ChunkSize = 128; // Valeur par défaut de sécurité
+	int32 ChunkSize = 32; // Valeur par défaut de sécurité
 	float SurfaceAmplitude = 50.0f;
 	float SurfaceWavelength = 2500.0f;
 	int32 BaseHeight = 64;

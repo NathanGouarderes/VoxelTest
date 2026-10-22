@@ -10,6 +10,7 @@
 #include "KiWebComponent.h"
 #include "InputAction.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "../VoxelModule/Public/Components/UVoxelBodyComponent.h"
 
 #include "BaseCharacter.generated.h"
 
@@ -49,21 +50,28 @@ public:
 	void OnFireKiWebLeft();
 	void OnReleaseKiWebLeft();
 	void OnReleaseKiWebRight();
+	void OnReel(const FInputActionValue& Value);
 	FVector GetCenterEyesLooking() const;
+	void UpdateWebVisual(const FVector& HandCm, const FVector& AnchorCm);
+	void HideWebVisual();
+	FKiWeb GetCurrentKiWeb();
 	UFUNCTION(Exec)
 	void CarveSphere(float Radius);
+	UFUNCTION(Exec)
+	void TreeDebugScatter(float RadiusMeters);
+	UFUNCTION(Exec)
+	void MeshTrees(float RadiusMeters);
+	UFUNCTION(Exec)
+	void CallMeasureCaveSlope(float RadiusMeters);
 
+	UFUNCTION(Exec)
+	void GotoPeak();
 
 
 
 
 protected:
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ki")
 	TObjectPtr<UKiWebComponent> WebComponent;
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
-	TObjectPtr<UInputAction> FireKiWebLeftArm;
-	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
-	TObjectPtr<UInputAction> FireKiWebRightArm;
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
@@ -72,14 +80,31 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> LookAction;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
 	TObjectPtr<UInputAction> FireKiWebLeftArmAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
+	TObjectPtr<UInputAction> FireKiWebRightArmAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
+	TObjectPtr<UInputAction> ReelAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Ki|Web")
+	UStaticMeshComponent* CylinderComponent;
+	UPROPERTY(EditDefaultsOnly, Category = "Ki|Web")
+	TObjectPtr<UStaticMesh> WebMesh;
 
-	bool bIsKiWebSkillActive = false;	
+
+
+	bool bIsKiWebSkillActive = false;
+	bool bIsWebLauched = false;
+	UPROPERTY()
+	TObjectPtr<AChunckManager> ChunkManager = nullptr;
+
+	AChunckManager* GetChunkManager();
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);

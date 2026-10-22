@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Math/IntVector.h"
 #include "FPackedQuad.h"
+#include "CoreGlobals.h"
 #include "FVoxelDataStructure.h"
 
 enum EChunkLODPhase
@@ -9,6 +10,39 @@ enum EChunkLODPhase
 	Stable,
 	GeneratingData,
 	AwaitingNewMesh,
+};
+
+struct FVoxelBuffer
+{
+	using FArray = TArray<FVoxelDataStructure>;
+
+	FVoxelBuffer() = default;
+	/** Remplace le contenu par un nouveau tableau (resultat de generation, commit de LOD). */
+	FVoxelBuffer& operator=(FArray&& In)
+	{
+		Ptr = MakeShared<FArray, ESPMode::ThreadSafe>(MoveTemp(In));
+		return *this;
+	}
+
+	int32 Num() const { return Ptr.IsValid() ? Ptr->Num() : 0; }
+	bool  IsValidIndex(int32 Index) const { return Ptr.IsValid() && Ptr->IsValidIndex(Index); }
+	const FVoxelDataStructure& operator[](int32 Index) const { return (*Ptr)[Index]; }
+	FArray& Edit()
+	{
+		check(IsInGameThread());   //En Development, une ecriture depuis un worker plante ICI, pile d'appels a l'appui
+		if (!Ptr.IsValid())
+		{
+			Ptr = MakeShared<FArray, ESPMode::ThreadSafe>();
+		}
+		else if (!Ptr.IsUnique())
+		{
+			//  Un job lit encore ce tableau : on ecrit dans une copie privee.
+			Ptr = MakeShared<FArray, ESPMode::ThreadSafe>(*Ptr);
+		}
+		return *Ptr;
+	}
+private:
+	TSharedPtr<FArray, ESPMode::ThreadSafe> Ptr;
 };
 
 struct FChunckDataStructure
@@ -19,12 +53,14 @@ struct FChunckDataStructure
 	FIntVector Coord;
 	TArray<FBrickQuadsRef> BrickQuads;
 	int32 MeshVersion;
-	TArray<FVoxelDataStructure> Voxels;
+	FVoxelBuffer Voxels;
 	int32 GenerationId = 0;
 	bool bIsDirty = true;
 	bool bIsQueued = false;
 	bool bIsChunckGenerated;
 	bool bPendingKill = false;
+	bool bIsAllSolid = false;
+	bool bPendingIsAllSolid = false;
 	EChunkLODPhase Phase = EChunkLODPhase::Stable;
 	TWeakObjectPtr<class AVoxelChunck> VoxelChunck;
 

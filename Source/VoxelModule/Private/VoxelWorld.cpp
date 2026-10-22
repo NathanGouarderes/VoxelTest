@@ -79,12 +79,12 @@ void AVoxelWorld::GenerateWorld()
 }
 
 
-FORCEINLINE int AVoxelWorld::GetVoxelIndex(int x, int y, int z)
+FORCEINLINE int AVoxelWorld::GetVoxelIndex(int x, int y, int z) const
 {
     return x + ChunckSize * (y + ChunckSize * z);
 }
 
-FVoxelDataStructure& AVoxelWorld::GetVoxel(FChunckDataStructure& Chunk, int x, int y, int z)
+const FVoxelDataStructure& AVoxelWorld::GetVoxel(const FChunckDataStructure& Chunk, int x, int y, int z) const
 {
     return Chunk.Voxels[GetVoxelIndex(x, y, z)];
 }

@@ -48,10 +48,52 @@ struct FTerrainLayer
     UPROPERTY(EditAnywhere)
     float Weight = 1.0f;
 
+    // Masque régional. Wavelength = 0 -> couche globale, présente partout.
+    UPROPERTY(EditAnywhere)
+    float MaskWavelength = 0.0f;
+    UPROPERTY(EditAnywhere)
+
+    float MaskLow = 0.30f; //En dessous la couche est absente
+    UPROPERTY(EditAnywhere)
+
+    float MaskHigh = 0.55f; //Au dessus amplitude pleine
+    UPROPERTY(EditAnywhere)
+    int32 MaskSeedOffset = 0;
+    UPROPERTY(EditAnywhere)
+    float RidgeStrength = 2.0f;  /** Ridged uniquement. Arrondi a l'entier : 0 = bruit ridged brut (ancien comportement), *  1 = cretes positives seulement, 2 = cretes aigues, 3+ = tres acerees. */
+    UPROPERTY(EditAnywhere)
+    float TerraceStep = 0.0f; // 0 = pas de terrassement, sinon hauteur de marche (voxels)
+
+
     /** Si valide, l'amplitude est multipliee par ce champ de controle.
      *  Ex : "Erosion" -> ridged fort en montagne, nul en plaine. */
     UPROPERTY(EditAnywhere)
     FName ModulatedBy = NAME_None;
+
+    TArray<FTerrainFieldGate> Gates;
+};
+
+/** Porte : la couche n'existe que la ou un champ de controle est dans la bonne plage.
+ *  Presence = SmoothStep(Low, High, valeur BRUTE du champ), inversee si bInvert. */
+USTRUCT()
+struct FTerrainFieldGate
+{
+    GENERATED_BODY()
+
+    /** Nom d'un FControlFieldConfig. Introuvable => porte FERMEE (couche absente) + erreur dans le log. */
+    UPROPERTY(EditAnywhere)
+    FName Field = NAME_None;
+
+    /** Seuils sur la valeur BRUTE du champ. Mesure sa plage reelle avec DebugLogStats. */
+    UPROPERTY(EditAnywhere)
+    float Low = 0.0f;
+
+    UPROPERTY(EditAnywhere)
+    float High = 0.2f;
+
+    /** Faux : presente quand le champ est HAUT. Vrai : presente quand il est BAS. */
+    UPROPERTY(EditAnywhere)
+    bool bInvert = false;
 };
 
 /** Description d'un champ de controle : un bruit tres basse frequence.
@@ -65,6 +107,9 @@ struct FControlFieldConfig
     UPROPERTY(EditAnywhere)
     FName Name = NAME_None;
 
+    UPROPERTY(EditAnywhere)
+    ETerrainLayerType Type = ETerrainLayerType::Fractal;
+
     UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
     float Wavelength = 20000.0f;
 
@@ -74,17 +119,11 @@ struct FControlFieldConfig
     UPROPERTY(EditAnywhere)
     int32 SeedOffset = 100;
 
-    /** Remappe [-1,1] vers [0,1] avant usage comme multiplicateur. */
+    /** Remappe [-1,1] vers [0,1] UNIQUEMENT quand le champ sert de multiplicateur (ModulatedBy).
+    *  La spline lit toujours la valeur brute. */
     UPROPERTY(EditAnywhere)
-    bool bRemapToUnit = true;
+    bool bRemapToUnit = true;  
 
-    float ProvinceWavelength = 400000.0f;   // 40 km
-    int32 ProvinceSeedOffset = 300;
-    float VeinWavelength = 80.0f;           // 8 m — les veines sont fines
-    int32 VeinSeedOffset = 400;
-    float VeinThreshold = 0.3f;
-    int32 VeinCellSize = 16;
-    
 };
 
 USTRUCT()
@@ -147,7 +186,7 @@ struct FWorldGlobalSettings
     int32 BaseHeight = 408;
 
     UPROPERTY(EditAnywhere)
-    float SeaLevel = 24.0f;
+    int32 SeaLevel = 24.0f;
 
     UPROPERTY(EditAnywhere)
     float CaveFrequency = 0.038f;
@@ -159,6 +198,7 @@ struct FWorldGlobalSettings
     UPROPERTY(EditAnywhere)
     int32 MasterSeed = 1337;
 
+
     /** Force du domain warping. 0 = desactive. */
     UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0"))
     float WarpStrength = 0.0f;
@@ -167,12 +207,24 @@ struct FWorldGlobalSettings
     float WarpWavelength = 5000.0f;
 
     UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
-    float VeinMinDepth = 1;
+    int32 VeinMinDepth = 20;
     UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
-    float VeinMaxDepth = 5;
+    int32 VeinMaxDepth = 1500;
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
+    float VeinThreshold = 0.3f;
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
+    float ProvinceWavelength = 400000.0f;   // 40 km
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
+    int32 ProvinceSeedOffset = 300;
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
+    float VeinWavelength = 80.0f;           
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1.0"))
+    int32 VeinSeedOffset = 400;
+    UPROPERTY(EditAnywhere, meta = (ClampMin = "1"))
+    int32 VeinCellSize = 16;
+
 };
 
-/** Conteneur racine. C'est ce que tu exposes dans AChunckManager. */
 USTRUCT()
 struct FTerrainConfig
 {
@@ -187,7 +239,13 @@ struct FTerrainConfig
     UPROPERTY(EditAnywhere)
     TArray<FTerrainLayer> Layers;
 
-    /** Appliquee au resultat somme des couches. Si vide, pas de remappage. */
+    /** Altitude de BASE = HeightSpline(valeur brute du champ ContinentalFieldIndex).
+         *  Les couches s'ajoutent ensuite. Si invalide : Global.BaseHeight. */
     UPROPERTY(EditAnywhere)
     FTerrainSpline HeightSpline;
+
+    UPROPERTY(EditAnywhere)
+    int32 ContinentalFieldIndex = 0;
+    UPROPERTY(EditAnywhere)
+    int32 ErosionFieldIndex = 1;
 };

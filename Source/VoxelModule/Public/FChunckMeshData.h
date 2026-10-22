@@ -6,7 +6,7 @@ struct FChunckMeshData
 {
     RealtimeMesh::FRealtimeMeshStreamSet Streams;
     FIntVector ChunckCoord;
-    bool bIsEmpty;
+    bool bIsEmpty = true;
 
     FChunckMeshData() = default;
 
