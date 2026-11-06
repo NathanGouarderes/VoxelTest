@@ -16,4 +16,6 @@ class VOXELTEST_API APlayerControllerComponent : public APlayerController
 	
 	virtual void SetupInputComponent() override;
 	void OnDestroyInput();
+	UFUNCTION(Exec)
+	void VoxelCarve(int32 I, int32 J, int32 K, int32 Radius);
 };

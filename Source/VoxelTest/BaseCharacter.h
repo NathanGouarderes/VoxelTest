@@ -11,6 +11,7 @@
 #include "InputAction.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "../VoxelModule/Public/Components/UVoxelBodyComponent.h"
+#include "MeleeComponent.h"
 
 #include "BaseCharacter.generated.h"
 
@@ -41,6 +42,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ki")
 	UKiCharacterMovement* GetKiMovement() const;
 
+
+
 	UEnhancedInputLocalPlayerSubsystem* GetInputSubsystem() const;
 
 	void SetKiWebSkillActive(bool Active);
@@ -50,6 +53,7 @@ public:
 	void OnFireKiWebLeft();
 	void OnReleaseKiWebLeft();
 	void OnReleaseKiWebRight();
+	void OnPunch();
 	void OnReel(const FInputActionValue& Value);
 	FVector GetCenterEyesLooking() const;
 	void UpdateWebVisual(const FVector& HandCm, const FVector& AnchorCm);
@@ -71,12 +75,23 @@ public:
 
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ki")
 	TObjectPtr<UKiWebComponent> WebComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Melee")
+
+	TObjectPtr<UMeleeComponent> MeleeComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel")
+	TObjectPtr<UVoxelBodyComponent> VoxelBodyComponent;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> KiWebMappingContext;
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+
+	TObjectPtr<UInputMappingContext> MeleeMappingContext;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> MoveAction;
@@ -92,6 +107,8 @@ protected:
 	TObjectPtr<UInputAction> FireKiWebRightArmAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Input|Ki")
 	TObjectPtr<UInputAction> ReelAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Melee")
+	TObjectPtr<UInputAction> PunchRightArmAction;
 	UPROPERTY(EditDefaultsOnly, Category = "Abilities|Ki|Web")
 	UStaticMeshComponent* CylinderComponent;
 	UPROPERTY(EditDefaultsOnly, Category = "Ki|Web")

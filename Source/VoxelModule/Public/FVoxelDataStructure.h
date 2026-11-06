@@ -5,5 +5,7 @@
 struct FVoxelDataStructure
 {
     FVoxelMaterial Material;
-    uint8 Flags;
+    uint8 Flags = 0;
+
 };
+static_assert(sizeof(FVoxelDataStructure) == 2);

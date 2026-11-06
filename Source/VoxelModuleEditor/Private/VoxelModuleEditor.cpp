@@ -9,6 +9,9 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "../../VoxelModule/Public/UVoxelBodyAsset.h"
 #include "Misc/PackageName.h"
+#include "DynamicMesh/DynamicMesh3.h"
+#include "Spatial/MeshAABBTree3.h"
+#include "Spatial/FastWinding.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVoxelEditor, Log, All);
 
@@ -33,6 +36,7 @@ void FVoxelModuleEditor::RegisterMenus()
 	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("ContentBrowser.AssetContextMenu.SkeletalMesh");
 	FToolMenuSection& Section = Menu->FindOrAddSection("GetAssetSections");
 	FToolUIAction Action;
+	double LamdaCellSize = CellSize;
 	Action.ExecuteAction = FToolMenuExecuteAction::CreateLambda([](const FToolMenuContext& InContext)
 	{
 		const UContentBrowserAssetContextMenuContext* Context = InContext.FindContext<UContentBrowserAssetContextMenuContext>();
@@ -100,7 +104,6 @@ void FVoxelModuleEditor::RegisterMenus()
 
 			const double PX = BoundsCenter.X; //Millieu du corps
 			const double PZ = BoundsMin.Z + 0.72 * BoundsSize.Z; //Hauteur poitrine
-			const float CellSize = 2.5f;
 			const int32  Padding = 2;
 			const int32 NumSteps = FMath::CeilToInt(BoundsSize.Y / CellSize) + 2 * Padding;
 
@@ -111,12 +114,12 @@ void FVoxelModuleEditor::RegisterMenus()
 				const double W = ComputeWindingNumber(MeshGeometry, P);
 				UE_LOG(LogVoxelEditor, Log, TEXT("Profil [%2d] : Y = %7.2f cm | w = %6.3f"), i, Y, W);
 			}
-			
-			FVoxelGrid VoxelGrid;
-			BuildVoxelGrid(MeshGeometry, CellSize, Padding, true, VoxelGrid);
-			AssignVoxelBones(MeshGeometry, VoxelGrid);
-			LogFrontBones(VoxelGrid, RefSkeleton);
-			CreateVoxelBodyAsset(*Mesh, VoxelGrid);
+
+FVoxelGrid VoxelGrid;
+BuildVoxelGrid(MeshGeometry, Padding, true, VoxelGrid);
+AssignVoxelBones(MeshGeometry, VoxelGrid);
+LogFrontBones(VoxelGrid, RefSkeleton);
+CreateVoxelBodyAsset(*Mesh, VoxelGrid);
 
 		}
 	});
@@ -152,7 +155,7 @@ bool FVoxelModuleEditor::ExtractBindPoseGeometry(const USkeletalMesh& Mesh, cons
 		const FVector3f VertexPosition = VertexPositions[VertexId];
 		Remap[VertexId.GetValue()] = Out.Positions.Add(VertexPosition);
 		Out.Bounds += VertexPosition;
-		
+
 		int32 BestBone = INDEX_NONE;
 		float BestWeight = -1.0f;
 		for (const UE::AnimationCore::FBoneWeight& BoneWeight : SkinWeight.Get(VertexId))
@@ -164,7 +167,7 @@ bool FVoxelModuleEditor::ExtractBindPoseGeometry(const USkeletalMesh& Mesh, cons
 			}
 		}
 		Out.DominantBone.Add(BestBone);
-		
+
 		if (BestBone == INDEX_NONE)
 		{
 			BoneNull++;
@@ -172,7 +175,7 @@ bool FVoxelModuleEditor::ExtractBindPoseGeometry(const USkeletalMesh& Mesh, cons
 
 	}
 	UE_LOG(LogVoxelEditor, Log, TEXT("FVoxelModuleEditor::ExtractBindPoseGeometry --> BoneNull = %d"), BoneNull);
-	
+
 
 	Out.Triangles.Reserve(MeshDescription.Triangles().Num());
 	for (const FTriangleID TriangleID : MeshDescription.Triangles().GetElementIDs())
@@ -183,7 +186,7 @@ bool FVoxelModuleEditor::ExtractBindPoseGeometry(const USkeletalMesh& Mesh, cons
 	return Out.Triangles.Num() > 0;
 }
 
-void FVoxelModuleEditor::BuildVoxelGrid(const FBindPoseGeometry& Geometry, const double CellSize, const int32 Padding, const bool bUseParallel, FVoxelGrid& Out)
+void FVoxelModuleEditor::BuildVoxelGrid(const FBindPoseGeometry& Geometry, /*const double CellSize,*/ const int32 Padding, const bool bUseParallel, FVoxelGrid& Out)
 {
 	Out = FVoxelGrid();
 	const FVector3d BoundsMin = FVector3d(Geometry.Bounds.Min);
@@ -201,14 +204,37 @@ void FVoxelModuleEditor::BuildVoxelGrid(const FBindPoseGeometry& Geometry, const
 	UE_LOG(LogVoxelEditor, Log, TEXT("BuildVoxelGrid : %d x %d x %d = %d cellules"),
 		Out.Dims.X, Out.Dims.Y, Out.Dims.Z, NumCells);
 
-	auto ComputeSlice = [&Geometry, &Out](const int32 K)
+	using namespace UE::Geometry;
+	FDynamicMesh3 Mesh;
+	for (const FVector3f& Position : Geometry.Positions)
+	{
+		Mesh.AppendVertex(FVector3d(Position));
+	}
+	int32 NumDuplicated = 0;
+	for (const FIntVector3& Triangle : Geometry.Triangles)
+	{
+		if (Mesh.AppendTriangle(FIndex3i(Triangle.X, Triangle.Y, Triangle.Z)) < 0)
+		{
+			const int32 A = Mesh.AppendVertex(FVector3d(Geometry.Positions[Triangle.X]));
+			const int32 B = Mesh.AppendVertex(FVector3d(Geometry.Positions[Triangle.Y]));
+			const int32 C = Mesh.AppendVertex(FVector3d(Geometry.Positions[Triangle.Z]));
+			Mesh.AppendTriangle(FIndex3i(A, B, C));
+			++NumDuplicated;
+		}
+	}
+	UE_LOG(LogVoxelEditor, Log, TEXT("Triangles dupliques : %d"), NumDuplicated);
+
+	TMeshAABBTree3<FDynamicMesh3> Spatial(&Mesh, true);
+	const TFastWindingTree<FDynamicMesh3> FastWinding(&Spatial, true);
+
+	auto ComputeSlice = [&FastWinding, &Out](const int32 K)
 		{
 			for (int32 J = 0; J < Out.Dims.Y; J++)
 				for (int32 I = 0; I < Out.Dims.X; I++)
 				{
 					const FVector3d P = Out.CellCenter(I, J, K);
 
-					Out.Winding[Out.Index(I, J, K)] = static_cast<float>(ComputeWindingNumber(Geometry, P));
+					Out.Winding[Out.Index(I, J, K)] = static_cast<float>(FastWinding.FastWindingNumber(P));
 				}
 		};
 	const double StartTime = FPlatformTime::Seconds();
@@ -265,7 +291,6 @@ double FVoxelModuleEditor::ComputeWindingNumber(const FBindPoseGeometry& Geometr
 
 void FVoxelModuleEditor::LogSliceAscii(const FBindPoseGeometry& Geometry, const double HeightRatio)
 {
-	const double CellSize = 2.5;
 	const int32  Padding = 2;
 
 	const FVector3d BoundsMin = FVector3d(Geometry.Bounds.Min);
@@ -482,9 +507,9 @@ UVoxelBodyAsset* FVoxelModuleEditor::CreateVoxelBodyAsset(USkeletalMesh& SourceM
 				}
 				else
 				{
-					if (NewBoneNames.Num() > MAX_uint8)   // 256 os déjà utilisés : plus de slot uint8 libre
+					if (NewBoneNames.Num() >= UVoxelBodyAsset::EmptySlot)   // 256 os déjà utilisés : plus de slot uint8 libre
 					{
-						UE_LOG(LogVoxelEditor, Error, TEXT("CreateVoxelBodyAsset : plus de %d os utilises, BoneSlot (uint8) insuffisant"), MAX_uint8 + 1);
+						UE_LOG(LogVoxelEditor, Error, TEXT("CreateVoxelBodyAsset : plus de %d os utilises, BoneSlot (uint8) insuffisant"), UVoxelBodyAsset::EmptySlot);
 						return nullptr;
 					}
 					Slot = static_cast<uint8>(NewBoneNames.Add(RefSkeleton.GetBoneName(Bone)));
@@ -520,6 +545,8 @@ UVoxelBodyAsset* FVoxelModuleEditor::CreateVoxelBodyAsset(USkeletalMesh& SourceM
 	Asset->Skeleton = SourceMesh.GetSkeleton();
 	Asset->Cells = MoveTemp(NewCells);       // MoveTemp : on transfère le tableau au lieu de le copier
 	Asset->BoneNames = MoveTemp(NewBoneNames);
+	Asset->InvalidateRuntimeData();
+	Asset->BuildRuntimeDataIfNeeded();
 
 	// ---------- 6. Signaler l'asset à l'éditeur ----------
 	if (bIsNewAsset)

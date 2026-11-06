@@ -4,6 +4,6 @@
 	     {
 	          public VoxelModuleEditor(ReadOnlyTargetRules Target) : base(Target)
 	          {
-	                PrivateDependencyModuleNames.AddRange(new string[] {"Core", "CoreUObject", "Engine", "ToolMenus", "VoxelModule", "Slate", "SlateCore", "ContentBrowser", "MeshDescription", "SkeletalMeshDescription", "AssetRegistry"});
+	                PrivateDependencyModuleNames.AddRange(new string[] {"Core", "CoreUObject", "Engine", "ToolMenus", "VoxelModule", "Slate", "SlateCore", "ContentBrowser", "MeshDescription", "SkeletalMeshDescription", "AssetRegistry", "GeometryCore"});
 	          }
 	     }

@@ -1,34 +1,65 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../UVoxelBodyAsset.h"
-#include "Engine/StaticMesh.h"
+#include "FVoxelDataStructure.h"
 #include "UVoxelBodyComponent.generated.h"
 
+class UVoxelBodyAsset;
+class UStaticMesh;
+class USkeletalMeshComponent;
+class UInstancedStaticMeshComponent;
 
+struct FBrickDelta
+{
+	uint64 Removed[8] = {};   // 8 × 64 = 512 bits, 1 = cellule détruite
+};
 
-UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
+UCLASS(ClassGroup = (Voxel), meta = (BlueprintSpawnableComponent))
 class VOXELMODULE_API UVoxelBodyComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:	
-	// Sets default values for this component's properties
+public:
 	UVoxelBodyComponent();
 
-protected:
-	// Called when the game starts
-	virtual void BeginPlay() override;
-
-public:	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Voxel")
 	TObjectPtr<UVoxelBodyAsset> Body;
-	TArray<int32> SlotToBoneIndex;
-	UPROPERTY(EditAnywhere)
-	UStaticMesh* MeshCube;
-	TArray<UInstancedStaticMeshComponent*> MeshCubeComponents;
-		
+
+	UPROPERTY(EditAnywhere, Category = "Voxel")
+	TObjectPtr<UStaticMesh> MeshCube;
+
+	// Reconstruit l'ISM d'un os depuis InstanceGrid. Renvoie son nombre d'instances.
+	int32 RebuildBoneVisual(int32 Slot);
+	int32 CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
+	void DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+private:
+	// ----- Partie données : client ET serveur -----
+	USkeletalMeshComponent* ResolveSkeletalTarget();
+	bool BuildInstanceData();
+
+	// ----- Partie affichage : jamais sur un serveur dédié -----
+	void BuildVisuals();
+	void FillInstance();
+
+	// Pointeurs UObject stockés dans un UObject -> UPROPERTY obligatoire.
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> Target;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UInstancedStaticMeshComponent>> MeshCubeComponents;   // indexé par slot
+
+	TArray<int32> SlotToBoneIndex;              // slot -> indice d'os dans le mesh actuel
+	TArray<FTransform> BoneCSPerSlot;           // slot -> matrice de bind (pose de repos, repère du mesh)
+	TArray<FVoxelDataStructure> InstanceGrid;   // les voxels qui composent le personnage,	 copie modifiable propre à ce personnage
+	double CubeScale = 1.0;
+	int32 NumAlive = 0;
+	UPROPERTY()
+	TArray<bool> DirtyBones;
+	TMap<int32, FBrickDelta> Delta;
 };

@@ -26,6 +26,8 @@ ABaseCharacter::ABaseCharacter(const FObjectInitializer& ObjectInitializer) : Su
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 500.f, 0.f);
 
 	WebComponent = CreateDefaultSubobject<UKiWebComponent>(TEXT("KiWebComponent"));
+	MeleeComponent = CreateDefaultSubobject<UMeleeComponent>(TEXT("MeleeComponent"));
+	VoxelBodyComponent = CreateDefaultSubobject<UVoxelBodyComponent>(TEXT("VoxelBodyComponent"));
 }
 
 // Called when the game starts or when spawned
@@ -46,7 +48,7 @@ void ABaseCharacter::BeginPlay()
 	}
 
 	auto* SubSystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
-	if (!SubSystem || !DefaultMappingContext || !KiWebMappingContext)
+	if (!SubSystem || !DefaultMappingContext || !KiWebMappingContext || !MeleeMappingContext)
 	{
 		UE_LOG(LogTemp, Error, TEXT("ABaseCharacter::BeginPlay() --> Subsystem ou IMC manquant"));
 		return;
@@ -54,6 +56,8 @@ void ABaseCharacter::BeginPlay()
 
 	SubSystem->AddMappingContext(DefaultMappingContext, 0);
 	SubSystem->AddMappingContext(KiWebMappingContext, 0);
+	SubSystem->AddMappingContext(MeleeMappingContext, 1);
+
 }
 
 // Called every frame
@@ -104,6 +108,14 @@ void ABaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	else
 	{
 		UE_LOG(LogTemp, Error, TEXT("ABaseCharacter::SetupPlayerInputComponent --> JumpAction non assignee dans le Blueprint"));
+	}
+	if (MeleeComponent)
+	{
+		EIC->BindAction(PunchRightArmAction, ETriggerEvent::Started, MeleeComponent.Get(), &UMeleeComponent::PunchRight);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("ABaseCharacter::SetupPlayerInputComponent --> PunchRightArmAction ou  MeleeComponent non assignee dans le Blueprint"));
 	}
 
 	if (FireKiWebLeftArmAction)
@@ -222,6 +234,11 @@ void ABaseCharacter::OnReleaseKiWebRight()
 {
 	OnReleaseKiWeb(EKiArm::Right);
 }
+void ABaseCharacter::OnPunch()
+{
+	MeleeComponent->PunchRight();
+}
+
 
 void ABaseCharacter::OnReel(const FInputActionValue& Value)
 {

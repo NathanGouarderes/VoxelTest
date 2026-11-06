@@ -196,8 +196,7 @@ void AChunckManager::BeginPlay()
         const float N = SurfaceNoise.GetNoise(VX / SurfaceWavelength, 0.0f);
         //UE_LOG(LogTemp, Warning, TEXT("    x=%6.0f vx  bruit=%+.3f  hauteur=%5d vx  (%.1f m)"), VX, N,       BaseHeight + FMath::FloorToInt(N * SurfaceAmplitude), (BaseHeight + N * SurfaceAmplitude) * VoxelSize * 0.01f);
     }
-    UE_LOG(LogTemp, Display, TEXT("BUDGETS | clusters=%d | mesh LOD0=%d | workers=%d | gen/frame=%d"),
-        MaxClusterMeshJob, MaxMeshJob, NumGenWorkers, MaxGenPerFrame);
+    //UE_LOG(LogTemp, Display, TEXT("BUDGETS | clusters=%d | mesh LOD0=%d | workers=%d | gen/frame=%d"),      MaxClusterMeshJob, MaxMeshJob, NumGenWorkers, MaxGenPerFrame);
 }
 
 void AChunckManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -240,6 +239,10 @@ void AChunckManager::Tick(float DeltaTime)
     TRACE_CPUPROFILER_EVENT_SCOPE(Voxel_Tick);
 
     Super::Tick(DeltaTime);
+    if (bUseDebugBoxClipMap)
+    {
+        DrawClipmapDebug();
+    }
     ResolveVoxelWorldIfNeeded();
     UpdatePlayerChunkState();
     ProcessDesiredResults();
@@ -310,7 +313,7 @@ void AChunckManager::Tick(float DeltaTime)
         // Ce qui ATTEND entre deux etapes (cumuls, pas debits).
         const int64 GenInFlight = C.GenDispatched - C.GenReturned;          // chez les workers ou en file de resultats
         const int32 ClustersWaiting = PendingClusterTier1.Num() + PendingClusterTier2.Num() + PendingClusterTier3.Num();
-
+        /*
         UE_LOG(LogTemp, Display,
             TEXT("PIPELINE | %.0f FPS | /s : spawn=%.0f gen envoyes=%.0f revenus=%.0f acceptes=%.0f | mesh LOD0=%.0f | clusters lances=%.0f appliques=%.0f perimes=%.0f | pas prets=%.0f | sautes : orphelins=%.0f pleins=%.0f | vides restants=%.0f, Air=%.0f, rapides=%.0f fastmiss=%.0f, BudgetCluster=%.0f, ClusterVisited=%.0f, ClusterSorts=%.0f, ClusterSortSeconds=%.2f, en vol=%d/%d"),
             PipeFrames / Dt,
@@ -334,6 +337,7 @@ void AChunckManager::Tick(float DeltaTime)
             Rate(C.ClusterSorts, P.ClusterSorts),
             (C.ClusterSortSeconds - P.ClusterSortSeconds) * 1000.0 / FMath::Max(1, PipeFrames),
             CurrentClusterMeshJob, MaxClusterMeshJob);
+            */
 
         PipeLast = PipeTotal;
         PipeLastLogTime = PipeNow;
@@ -1259,6 +1263,7 @@ void AChunckManager::RebuildDesiredChunkSet(TMap <FIntVector, int32>& OutChunksT
     if (Now - LastLog > 5.0)
     {
         LastLog = Now;
+        /*
         UE_LOG(LogTemp, Display,
             TEXT("DESIRED | gardes=%d | air retires=%d (%.1f%%) | colonnes calculees=%d (cache=%d) | %.1f ms"),
             OutChunksToKeep.Num(), CulledAir,
@@ -1267,7 +1272,7 @@ void AChunckManager::RebuildDesiredChunkSet(TMap <FIntVector, int32>& OutChunksT
             (Now - StartTime) * 1000.0);
 
         UE_LOG(LogTemp, Display, TEXT("SHADOW | plein predit=%lld | erreurs LOD0=%lld LOD1=%lld LOD2=%lld LOD3=%lld"),
-            ShadowPredicted, ShadowMiss[0], ShadowMiss[1], ShadowMiss[2], ShadowMiss[3]);
+            ShadowPredicted, ShadowMiss[0], ShadowMiss[1], ShadowMiss[2], ShadowMiss[3]);*/
     }
 }
 
@@ -1351,7 +1356,13 @@ void AChunckManager::ProcessSpawnQueue()
 
     if (!IsValid(VoxelWorld)) return;
     int32 Spawned = 0;
-    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC)
+    {
+        //UE_LOG(LogTemp, Warning, TEXT(" AChunckManager::ProcessSpawnQueue() --> !PC"));
+        return;
+    }
+    APawn* Pawn = PC->GetPawn();
     if (!Pawn) return;
 
     FVector PlayerPos = Pawn->GetActorLocation();
@@ -1582,8 +1593,13 @@ void AChunckManager::ProcessPendingClusters()
     TRACE_CPUPROFILER_EVENT_SCOPE(Voxel_ProcessPendingClusters);
 
     if (!IsValid(VoxelWorld)) return;
-
-    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC)
+    {
+        //UE_LOG(LogTemp, Warning, TEXT("AChunckManager::ProcessPendingClusters() --> !GetWorld()->GetFirstPlayerController()"));
+        return;
+    }
+    APawn* Pawn = PC->GetPawn();
     if (!Pawn)
     {
         return;
@@ -2927,7 +2943,13 @@ void AChunckManager::PopulateChunkTree(FIntVector Coord)
 
 void AChunckManager::GotoPeak()
 {
-    APawn* Pawn = GetWorld()->GetFirstPlayerController()->GetPawn();
+    APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (PC)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("AChunckManager::GotoPeak() --> !GetWorld()->GetFirstPlayerController()"));
+        return;
+    }
+    APawn* Pawn = PC->GetPawn();
     if (!Pawn) return;
     GetWorld()->GetTimerManager().ClearTimer(SafeSpawnTimer);   // sinon il te ramène
 
@@ -3513,5 +3535,73 @@ void AChunckManager::BuildChunkPaddedVolumeFromSnapshot(const FChunkPadSnapshot&
                 if (!N.IsValidIndex(SrcIdx)) continue;
                 OutVolume[PadI[0] + PadI[1] * PS + PadI[2] * PS * PS] = N[SrcIdx];
             }
+    }
+}
+
+void AChunckManager::DrawClipmapDebug()
+{
+    if (!bUseDebugBoxClipMap)
+    {
+        return;
+    }
+
+    if (!ensureMsgf(ClipMapRadius >= 2 && ClipMapRadius % 2 == 0,
+        TEXT("ClipMapRadius doit etre pair et >= 2 (actuel : %d)"), ClipMapRadius))
+    {
+        return;
+    }
+
+    const APlayerController* PC = GetWorld()->GetFirstPlayerController();
+    if (!PC)
+    {
+        return;
+    }
+    const APawn* Pawn = PC->GetPawn();
+    if (!Pawn)
+    {
+        return;
+    }
+
+    const FVector PlayerPos = Pawn->GetActorLocation();
+    const int32   R = ClipMapRadius;
+    const double  S0 = (double)ChunkSize * (double)VoxelSize;            // 320 cm
+
+    const int32 NumLevels =
+        FMath::CeilLogTwo((uint32)FMath::CeilToInt(ClipMapViewDistance / ((R - 1) * S0))) + 1;   // 12
+
+    const float ColorDivisor = (float)FMath::Max(NumLevels - 1, 1);
+
+    for (int32 Level = 0; Level < NumLevels; ++Level)
+    {
+        const double SL = S0 * (double)(1 << Level);
+
+        // Chunk du joueur sur la grille du niveau L (Floor : correct pour les négatifs)
+        const FIntVector PL(FMath::FloorToInt32(PlayerPos.X / SL),
+            FMath::FloorToInt32(PlayerPos.Y / SL),
+            FMath::FloorToInt32(PlayerPos.Z / SL));
+
+        // Coin minimal, forcé pair
+        const FIntVector OL(FloorDivInt(PL.X - R + 1, 2) * 2,
+            FloorDivInt(PL.Y - R + 1, 2) * 2,
+            FloorDivInt(PL.Z - R + 1, 2) * 2);
+        if (LastClipMapOrigins.Num() != NumLevels)
+        {
+            LastClipMapOrigins.Init(FIntVector(MAX_int32), NumLevels);
+        }
+        if (OL != LastClipMapOrigins[Level] && LastClipMapOrigins[Level] != FIntVector(MAX_int32))
+        {
+            FIntVector Delta = OL - LastClipMapOrigins[Level];
+            UE_LOG(LogTemp, Display, TEXT("CLIP SAUT | Level=%d OL=(%d,%d,%d) delta=(%d,%d,%d)"), Level, OL.X, OL.Y, OL.Z, Delta.X, Delta.Y, Delta.Z);
+        }
+        LastClipMapOrigins[Level] = OL;
+
+        // Conversion en double AVANT la multiplication : pas de débordement int32
+        const FVector Center = FVector(OL + FIntVector(R)) * SL;
+        const FVector Extent(R * SL);                                     // demi-taille
+        const FColor  Color = FColor::MakeRedToGreenColorFromScalar((float)Level / ColorDivisor);
+
+        DrawDebugBox(GetWorld(), Center, Extent, Color,
+            /*bPersistentLines*/ false, /*LifeTime*/ -1.f,
+            SDPG_Foreground, /*Thickness*/ 0.f);
     }
 }

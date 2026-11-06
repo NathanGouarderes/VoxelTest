@@ -46,8 +46,9 @@ class FVoxelModuleEditor : public IModuleInterface
 	static void LogSliceAscii(const FBindPoseGeometry& Geometry, const double HeightRatio);
 	static void LogFrontSilhouette(const FVoxelGrid& Grid);
 	static void LogFrontBones(const FVoxelGrid& Grid, const FReferenceSkeleton& RefSkeleton);
-	static void BuildVoxelGrid(const FBindPoseGeometry& Geometry, const double CellSize, const int32 Padding, const bool bUseParallel, FVoxelGrid& Out);
+	static void BuildVoxelGrid(const FBindPoseGeometry& Geometry, /*const double CellSize,*/ const int32 Padding, const bool bUseParallel, FVoxelGrid& Out);
 	static void AssignVoxelBones(const FBindPoseGeometry& Geometry, FVoxelGrid& Grid);
 	static UVoxelBodyAsset* CreateVoxelBodyAsset(USkeletalMesh& SourceMesh, const FVoxelGrid& Grid);
+	static constexpr double CellSize = 0.625;
 
 };

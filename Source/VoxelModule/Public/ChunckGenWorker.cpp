@@ -177,11 +177,11 @@ namespace VoxelWorkerStats
 		const double HitPct = (DHits + DMisses > 0) ? 100.0 * (double)DHits / (double)(DHits + DMisses) : 0.0;
 
 		// Ligne 1 : debit global. Occupation basse = workers affames (le goulot est en amont).
-		UE_LOG(LogTemp, Display,
+		/*UE_LOG(LogTemp, Display,
 			TEXT("WORKERS | fenetre %.1fs | jobs=%lld (%.0f/s) | occupation=%.1f%% | sommeils=%lld | cache colonne=%.1f%% | abandonnes=%lld (total %lld)"),
 			WindowSec, Jobs, (double)Jobs / WindowSec, BusyPct, DSleeps, HitPct, DDropped, Cur.Dropped);
-
-		// Ligne 2 : cout moyen d'un job par LOD.
+			*/
+			// Ligne 2 : cout moyen d'un job par LOD.
 		FString PerLOD;
 		for (int32 L = 0; L < NumLOD; ++L)
 		{
@@ -191,7 +191,7 @@ namespace VoxelWorkerStats
 				: 0.0;
 			PerLOD += FString::Printf(TEXT(" | LOD%d n=%lld moy=%.0fus"), L, DJobs, AvgUs);
 		}
-		UE_LOG(LogTemp, Display, TEXT("WORKERS | temps par job%s"), *PerLOD);
+		//UE_LOG(LogTemp, Display, TEXT("WORKERS | temps par job%s"), *PerLOD);
 
 		// Lignes 3+ : matrice position (par rapport a la surface) x contenu, par LOD.
 		for (int32 L = 0; L < NumLOD; ++L)
@@ -228,9 +228,10 @@ namespace VoxelWorkerStats
 			const int64 AboveNotEmpty = D[0][1] + D[0][2];
 			if (AboveNotEmpty > 0)
 			{
+				/*
 				UE_LOG(LogTemp, Warning,
 					TEXT("WORKERS | LOD%d : %lld chunk(s) Above NON vides (pinceaux/editions en altitude, ou bug de classification)."),
-					L, AboveNotEmpty);
+					L, AboveNotEmpty);*/
 			}
 
 			
@@ -240,7 +241,7 @@ namespace VoxelWorkerStats
 		{
 			EditedLine += FString::Printf(TEXT(" | LOD%d n=%lld"), L, Cur.Edited[L] - Prev.Edited[L]);
 		}
-		UE_LOG(LogTemp, Display, TEXT("WORKERS | jobs edites (hors matrice)%s"), *EditedLine);
+		//UE_LOG(LogTemp, Display, TEXT("WORKERS | jobs edites (hors matrice)%s"), *EditedLine);
 	}
 
 	static void MaybePublish()

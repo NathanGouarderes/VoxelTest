@@ -3,7 +3,8 @@
 
 #include "PlayerControllerComponent.h"
 #include "VoxelChunck.h" 
-
+#include "EngineUtils.h"
+#include "../../VoxelModule/Public/Components/UVoxelBodyComponent.h"
 void APlayerControllerComponent::SetupInputComponent()
 {
     Super::SetupInputComponent();
@@ -47,6 +48,18 @@ void APlayerControllerComponent::OnDestroyInput()
             int Z = FMath::FloorToInt(LocalPos.Z / VoxelSize);
 
             Chunck->RemoveVoxel(X, Y, Z);
+        }
+    }
+}
+
+
+void APlayerControllerComponent::VoxelCarve(int32 I, int32 J, int32 K, int32 Radius)
+{
+    for (TActorIterator<AActor> ActorsIt(GetWorld()); ActorsIt; ++ActorsIt)
+    {
+        if (UVoxelBodyComponent* VoxelBodyComponent = ActorsIt->FindComponentByClass<UVoxelBodyComponent>())
+        {
+            VoxelBodyComponent->CarveSphere(I, J, K, Radius);
         }
     }
 }

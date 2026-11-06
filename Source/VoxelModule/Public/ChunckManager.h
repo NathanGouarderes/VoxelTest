@@ -159,6 +159,9 @@ public:
 
 	void GenerateAsyncGreedyMesh(FIntVector Coord/*, uint64 RequestedMask*/);
 	static bool CompareMask(const FMask& M1, const FMask& M2);
+	void DrawClipmapDebug();
+
+	
 
 	//void GenerateAsyncGreedyMeshForCluster(FIntVector Coord);
 	float GetNoise(float WorldX, float WorldY);
@@ -260,6 +263,19 @@ public:
 	bool   bFillLogged = false;
 	UPROPERTY(EditAnywhere, Category = "Voxel | Debug")
 	bool bJobTelemetry = false;
+
+	/** Demi-côté d'une boîte, en chunks de son niveau. DOIT être pair (alignement des trous). */
+	UPROPERTY(EditAnywhere, Category = "Voxel | Clipmap", meta = (ClampMin = "2"))
+	int32 ClipMapRadius = 16;
+
+	/** Portée garantie de la clipmap, en cm (5 000 000 = 50 km). */
+	UPROPERTY(EditAnywhere, Category = "Voxel | Clipmap", meta = (ClampMin = "1.0"))
+	double ClipMapViewDistance = 5000000.0;
+
+	UPROPERTY(EditAnywhere, Category = "Voxel | Clipmap")
+	bool bUseDebugBoxClipMap = false;
+	UPROPERTY(EditAnywhere, Category = "Voxel | Clipmap")
+	TArray<FIntVector> LastClipMapOrigins;
 
 	inline static FIntVector Dirs[6] = { {-1,0,0},{1,0,0},{0,-1,0},{0,1,0},{0,0,-1},{0,0,1} };
 	TQueue<FIntVector> PendingUnloadQueue;

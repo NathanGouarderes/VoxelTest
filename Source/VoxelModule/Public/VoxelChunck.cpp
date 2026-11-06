@@ -23,6 +23,7 @@ AVoxelChunck::AVoxelChunck()
 	RealtimeMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	RealtimeMeshComponent->SetCollisionObjectType(ECC_WorldStatic);
 	RealtimeMeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
+	RealtimeMeshComponent->SetMobility(EComponentMobility::Static);
 	RealtimeMeshComponent->bVisibleInRayTracing = false;
 	VoxelSize = 10.0f;
 	ChunckManager = nullptr;
@@ -192,29 +193,5 @@ void AVoxelChunck::RemoveVoxel(int X, int Y, int Z)
 	FVoxelDataStructure VoxelAir;
 	VoxelAir.Material.Id = 0;
 	ChunckManager->SetVoxelAt(G, VoxelAir);
-	/*
-	FChunckDataStructure* ChunckData = ChunckManager->VoxelWorld->Chuncks.Find(Coord);
-	if (!ChunckData)
-	{
-		UE_LOG(LogTemp, Error, TEXT("AVoxelChunck::RemoveVoxel(int X, int Y, int Z): ChunckData non trouvé pour coord %s"), *Coord.ToString());
-		return;
-	}
-	int index = X + Y * Size + Z * Size * Size;
-	if (FChunkEditLayer* Layer = ChunckManager->VoxelWorld->EditLayers.Find(Coord))
-	{
-		Layer->Edits.Find(index)->Material.Id = 0;
-	}
-	ChunckData->Voxels[index].Material.Id = 0;
-
-	bIsDirty = true;
-	ChunckManager->RegisterDirtyChunk(Coord);
-	if (X == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(-1, 0, 0));
-	if (X == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(1, 0, 0));
-
-	if (Y == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, -1, 0));
-	if (Y == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 1, 0));
-
-	if (Z == 0) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, -1));
-	if (Z == Size - 1) ChunckManager->RegisterDirtyChunk(Coord + FIntVector(0, 0, 1));
-	*/
+	
 }
