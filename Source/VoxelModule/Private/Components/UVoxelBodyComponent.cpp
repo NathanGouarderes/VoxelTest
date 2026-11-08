@@ -1,4 +1,4 @@
-#include "Components/UVoxelBodyComponent.h"
+Ôªø#include "Components/UVoxelBodyComponent.h"
 #include "UVoxelBodyAsset.h"
 #include "AnimationRuntime.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -26,11 +26,11 @@ void UVoxelBodyComponent::BeginPlay()
 		return;
 	}
 
-	// 1) DONN…ES (client ET serveur)
+	// 1) DONN√âES (client ET serveur)
 	Target = ResolveSkeletalTarget();
 	if (!Target)
 	{
-		return;   // la raison est dÈj‡ loguÈe
+		return;   // la raison est d√©j√† logu√©e
 	}
 
 	if (!BuildInstanceData())
@@ -38,7 +38,7 @@ void UVoxelBodyComponent::BeginPlay()
 		return;
 	}
 
-	// 2) GARDE R…SEAU : un serveur dÈdiÈ n'affiche rien
+	// 2) GARDE R√âSEAU : un serveur d√©di√© n'affiche rien
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -59,7 +59,7 @@ void UVoxelBodyComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			RebuildBoneVisual(Slot);
 			DirtyBones[Slot] = false;
 			RebuildCountThisFrame++;
-			SetComponentTickEnabled(false); //sera remis ‡ true ‡ la prochaine destruction
+			SetComponentTickEnabled(false); //sera remis √† true √† la prochaine destruction
 		}
 	}
 	if (RebuildCountThisFrame != 0)
@@ -124,20 +124,35 @@ USkeletalMeshComponent* UVoxelBodyComponent::ResolveSkeletalTarget()
 		}
 	}
 
-	UE_LOG(LogVoxelBody, Log, TEXT("%s : %d/%d os rÈsolus"), *GetNameSafe(Owner), NumResolved, NumSlots);
+	UE_LOG(LogVoxelBody, Log, TEXT("%s : %d/%d os r√©solus"), *GetNameSafe(Owner), NumResolved, NumSlots);
 	return Kept;
 }
 
 bool UVoxelBodyComponent::BuildInstanceData()
 {
-	// a) DonnÈes partagÈes de l'asset (construites une seule fois par machine)
+	// a) Donn√©es partag√©es de l'asset (construites une seule fois par machine)
 	Body->BuildRuntimeDataIfNeeded();
 	if (!Body->IsRuntimeDataBuilt())
 	{
-		return false;   // l'asset a loguÈ la raison
+		return false;   // l'asset a logu√© la raison
 	}
 
-	// b) Copie propre ‡ ce personnage, dÈduite de SlotGrid -> cohÈrente par construction
+	int32 NumSlots = Body->BoneNames.Num();
+	DirtyBones.Init(false, NumSlots);
+	SlotMin.Init(FIntVector(MAX_int32), NumSlots);
+	SlotMax.Init(FIntVector(MIN_int32), NumSlots);
+	for (const FVoxelBodyCell& Cell : Body->Cells)
+	{
+		FIntVector& Low = SlotMin[Cell.BoneSlot];
+		FIntVector& High = SlotMax[Cell.BoneSlot];
+		Low.X = FMath::Min(Low.X, (int32)Cell.I);
+		High.X = FMath::Max(High.X, (int32)Cell.I);
+		Low.Y = FMath::Min(Low.Y, (int32)Cell.J);
+		High.Y = FMath::Max(High.Y, (int32)Cell.J);
+		Low.Z = FMath::Min(Low.Z, (int32)Cell.K);
+		High.Z = FMath::Max(High.Z, (int32)Cell.K);
+	}
+	// b) Copie propre √† ce personnage, d√©duite de SlotGrid -> coh√©rente par construction
 	const TArray<uint8>& SlotGrid = Body->GetSlotGrid();
 	InstanceGrid.Init(FVoxelDataStructure(), SlotGrid.Num());   // tout vide : Id = 0, Flags = 0
 	
@@ -149,14 +164,14 @@ bool UVoxelBodyComponent::BuildInstanceData()
 		{
 			continue;   // case vide : le cas NORMAL, pas une erreur
 		}
-		InstanceGrid[GridIndex].Material.Id = 1;   // plus tard : vrai identifiant de matÈriau
+		InstanceGrid[GridIndex].Material.Id = 1;   // plus tard : vrai identifiant de mat√©riau
 		++NumSolid;
 	}
 	NumAlive = NumSolid;
 
 	if (NumSolid != Body->Cells.Num())
 	{
-		UE_LOG(LogVoxelBody, Error, TEXT("%s : InstanceGrid incohÈrente, %d cases pleines pour %d cellules"),
+		UE_LOG(LogVoxelBody, Error, TEXT("%s : InstanceGrid incoh√©rente, %d cases pleines pour %d cellules"),
 			*GetNameSafe(GetOwner()), NumSolid, Body->Cells.Num());
 		return false;
 	}
@@ -169,7 +184,6 @@ bool UVoxelBodyComponent::BuildInstanceData()
 	}
 	const FReferenceSkeleton& RefSkeleton = SkeletalMesh->GetRefSkeleton();
 
-	const int32 NumSlots = Body->BoneNames.Num();
 	BoneCSPerSlot.Init(FTransform::Identity, NumSlots);   // AVANT la boucle
 	for (int32 Slot = 0; Slot < NumSlots; ++Slot)
 	{
@@ -180,7 +194,7 @@ bool UVoxelBodyComponent::BuildInstanceData()
 		BoneCSPerSlot[Slot] = FAnimationRuntime::GetComponentSpaceTransformRefPose(RefSkeleton, SlotToBoneIndex[Slot]);
 	}
 
-	UE_LOG(LogVoxelBody, Log, TEXT("%s : InstanceGrid prÍte, %d cases pleines sur %d"),
+	UE_LOG(LogVoxelBody, Log, TEXT("%s : InstanceGrid pr√™te, %d cases pleines sur %d"),
 		*GetNameSafe(GetOwner()), NumSolid, InstanceGrid.Num());
 	if (Body->Cells.Num() > 0)
 	{
@@ -197,7 +211,7 @@ void UVoxelBodyComponent::BuildVisuals()
 		return;
 	}
 
-	// …chelle calculÈe une seule fois. BoxExtent = DEMI-taille du cube.
+	// √âchelle calcul√©e une seule fois. BoxExtent = DEMI-taille du cube.
 	const double CubeSize = MeshCube->GetBounds().BoxExtent.X * 2.0;
 	if (CubeSize <= UE_KINDA_SMALL_NUMBER)
 	{
@@ -223,15 +237,15 @@ void UVoxelBodyComponent::BuildVisuals()
 			NewObject<UInstancedStaticMeshComponent>(Owner, FName(TEXT("VoxelISM_") + BoneName.ToString()));
 		ISM->SetStaticMesh(MeshCube);
 		ISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ISM->SetMobility(EComponentMobility::Movable);   // AVANT RegisterComponent : il suit un os animÈ
-		ISM->SetupAttachment(Target, BoneName);           // repËre de l'ISM = repËre de l'os
+		ISM->SetMobility(EComponentMobility::Movable);   // AVANT RegisterComponent : il suit un os anim√©
+		ISM->SetupAttachment(Target, BoneName);           // rep√®re de l'ISM = rep√®re de l'os
 		ISM->RegisterComponent();
 
 		MeshCubeComponents[Slot] = ISM;
 		++NumCreated;
 	}
 
-	UE_LOG(LogVoxelBody, Log, TEXT("%s : %d ISM crÈÈs"), *GetNameSafe(Owner), NumCreated);
+	UE_LOG(LogVoxelBody, Log, TEXT("%s : %d ISM cr√©√©s"), *GetNameSafe(Owner), NumCreated);
 	FillInstance();
 }
 
@@ -243,7 +257,7 @@ void UVoxelBodyComponent::FillInstance()
 		TotalInstances += RebuildBoneVisual(Slot);
 	}
 
-	// Au spawn, aucune cellule dÈtruite : on doit retrouver toutes les cellules de l'asset.
+	// Au spawn, aucune cellule d√©truite : on doit retrouver toutes les cellules de l'asset.
 	const int32 Expected = Body->Cells.Num();
 	if (TotalInstances == Expected)
 	{
@@ -252,7 +266,7 @@ void UVoxelBodyComponent::FillInstance()
 	}
 	else
 	{
-		UE_LOG(LogVoxelBody, Error, TEXT("%s : %d instances sur %d cellules (…CART)"),
+		UE_LOG(LogVoxelBody, Error, TEXT("%s : %d instances sur %d cellules (√âCART)"),
 			*GetNameSafe(GetOwner()), TotalInstances, Expected);
 	}
 }
@@ -264,7 +278,7 @@ int32 UVoxelBodyComponent::RebuildBoneVisual(const int32 Slot)
 	if (!MeshCubeComponents.IsValidIndex(Slot) || !SlotToBoneIndex.IsValidIndex(Slot))
 	{
 		UE_LOG(LogVoxelBody, Error, TEXT("UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius) -->InstanceGrid.Num() == 0"));
-		return 0;   // ex. serveur dÈdiÈ : aucun ISM
+		return 0;   // ex. serveur d√©di√© : aucun ISM
 	}
 	UInstancedStaticMeshComponent* ISM = MeshCubeComponents[Slot];
 	if (!ISM || SlotToBoneIndex[Slot] == INDEX_NONE)
@@ -280,15 +294,15 @@ int32 UVoxelBodyComponent::RebuildBoneVisual(const int32 Slot)
 
 	for (const int32 CellIdx : CellsOfBone)
 	{
-		const FVoxelBodyCell& Cell = Body->Cells[CellIdx];   // const : l'asset est partagÈ, lecture seule
+		const FVoxelBodyCell& Cell = Body->Cells[CellIdx];   // const : l'asset est partag√©, lecture seule
 		const int32 GridIndex = Body->CellIndex(Cell.I, Cell.J, Cell.K);
 
 		if (InstanceGrid[GridIndex].Material.Id == 0)
 		{
-			continue;   // cellule dÈtruite
+			continue;   // cellule d√©truite
 		}
 
-		// FVector(...) indispensable : sans lui, opÈrateur virgule
+		// FVector(...) indispensable : sans lui, op√©rateur virgule
 		const FVector CellCenter = Body->Origin
 			+ FVector(Cell.I + 0.5, Cell.J + 0.5, Cell.K + 0.5) * Body->CellSize;
 
@@ -296,20 +310,20 @@ int32 UVoxelBodyComponent::RebuildBoneVisual(const int32 Slot)
 		Transforms.Add(CellMeshSpace.GetRelativeTransform(BoneCSPerSlot[Slot]));   // "bind inverse"
 	}
 
-	// Une seule reconstruction, APR»S la boucle.
+	// Une seule reconstruction, APR√àS la boucle.
 	ISM->ClearInstances();
 	if (Transforms.Num() > 0)
 	{
 		ISM->AddInstances(Transforms, /*bShouldReturnIndices*/ false, /*bWorldSpace*/ false, /*bUpdateNavigation*/ false);
 	}
 
-	// Mesure indÈpendante : ce que l'ISM contient rÈellement.
+	// Mesure ind√©pendante : ce que l'ISM contient r√©ellement.
 	return ISM->GetInstanceCount();
 }
 
 int32 UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius)
 {
-	NathanDebug(TEXT("CarveSphere dÈbut"));
+	NathanDebug(TEXT("CarveSphere d√©but"));
 	if (InstanceGrid.Num() == 0)
 	{
 		UE_LOG(LogVoxelBody, Error, TEXT("UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius) -->InstanceGrid.Num() == 0"));
@@ -320,8 +334,6 @@ int32 UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radiu
 		UE_LOG(LogVoxelBody, Error, TEXT("UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius) --> Radius < 0 || Radius > 100"));
 		return 0;
 	}
-	int32 NumSlots = Body->BoneNames.Num();
-	DirtyBones.Init(false, NumSlots);
 	int32 NumRemoved = 0;
 	float SquaredRadius = Radius * Radius;
 	for(int32 K = K0 - Radius; K <= K0 + Radius; K++)
@@ -369,13 +381,90 @@ int32 UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radiu
 	return NumRemoved;
 }
 
+int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm)
+{
+	if (!Body || !Target)
+	{
+		return 0;
+	}
+
+	const FBoxSphereBounds& Bounds = Target->Bounds;
+	if (FMath::PointDistToSegment(Bounds.Origin, AWorld, BWorld) > Bounds.SphereRadius + RadiusCm)
+	{
+		return 0;
+	}
+	const TArray<uint8>& SlotGrid = Body->GetSlotGrid();
+	const double CellSize = Body->CellSize;
+	const double R = RadiusCm / CellSize;   // rayon en cellules
+	const double R2 = R * R;
+	int32 NumRemoved = 0;
+	const int32 NumSlots = SlotToBoneIndex.Num();
+	if (SlotMin.Num() != NumSlots || SlotMax.Num() != NumSlots || BoneCSPerSlot.Num() != NumSlots
+		|| DirtyBones.Num() != NumSlots || InstanceGrid.Num() != Body->GetSlotGrid().Num())
+	{
+		UE_LOG(LogTemp, Error, TEXT("CarveCapsuleWorld %s : tableaux incoherents | Slots=%d SlotMin=%d SlotMax=%d BoneCS=%d Dirty=%d Instance=%d SlotGrid=%d"),
+			*GetNameSafe(GetOwner()), NumSlots, SlotMin.Num(), SlotMax.Num(), BoneCSPerSlot.Num(),
+			DirtyBones.Num(), InstanceGrid.Num(), Body->GetSlotGrid().Num());
+		return 0;
+	}
+	for (int32 Slot = 0; Slot < SlotToBoneIndex.Num(); Slot++)
+	{
+		if (SlotToBoneIndex[Slot] == INDEX_NONE || SlotMin[Slot].X > SlotMax[Slot].X)
+		{
+			continue;   // os non r√©solu, ou sans aucune cellule
+		}
+		const FTransform BoneWorld = Target->GetBoneTransform(SlotToBoneIndex[Slot]);
+		const FVector A = (BoneCSPerSlot[Slot].TransformPosition(BoneWorld.InverseTransformPosition(AWorld)) - Body->Origin) / CellSize;
+		const FVector B = (BoneCSPerSlot[Slot].TransformPosition(BoneWorld.InverseTransformPosition(BWorld)) - Body->Origin) / CellSize;
+
+		// 2. Bo√Æte √† parcourir = bo√Æte de la capsule ‚à© bo√Æte de l'os
+		const int32 I0 = FMath::Max(FMath::FloorToInt(FMath::Min(A.X, B.X) - R), SlotMin[Slot].X);
+		const int32 I1 = FMath::Min(FMath::CeilToInt(FMath::Max(A.X, B.X) + R), SlotMax[Slot].X);
+		const int32 J0 = FMath::Max(FMath::FloorToInt(FMath::Min(A.Y, B.Y) - R), SlotMin[Slot].Y);
+		const int32 J1 = FMath::Min(FMath::CeilToInt(FMath::Max(A.Y, B.Y) + R), SlotMax[Slot].Y);
+		const int32 K0 = FMath::Max(FMath::FloorToInt(FMath::Min(A.Z, B.Z) - R), SlotMin[Slot].Z);
+		const int32 K1 = FMath::Min(FMath::CeilToInt(FMath::Max(A.Z, B.Z) + R), SlotMax[Slot].Z);
+		if (I0 > I1 || J0 > J1 || K0 > K1)
+		{
+			continue;   // la capsule ne recoupe pas cet os
+		}
+		FVector AB = B - A;
+		const double AB2 = AB.SizeSquared();
+		for (int32 K = K0; K <= K1; ++K)
+			for (int32 J = J0; J <= J1; ++J)
+				for (int32 I = I0; I <= I1; ++I)
+				{
+					int32 Index = Body->CellIndex(I, J, K);
+					if (SlotGrid[Index] != Slot || InstanceGrid[Index].Material.Id == 0)
+					{
+						continue;
+					}
+					const FVector P(I + 0.5, J + 0.5, K + 0.5);
+					const double T = (AB2 > 0.0) ? FMath::Clamp(FVector::DotProduct(P - A, AB) / AB2, 0.0, 1.0) : 0.0;
+					if (FVector::DistSquared(P, A + T * AB) > R2)
+					{
+						continue;
+					}
+					InstanceGrid[Index].Material.Id = 0;
+					DirtyBones[Slot] = true;
+					NumRemoved++;
+				}
+	}
+	if (NumRemoved > 0)
+	{
+		NumAlive -= NumRemoved;
+		SetComponentTickEnabled(true);
+	}
+	return NumRemoved;
+
+}
 
 void UVoxelBodyComponent::DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int32 Radius)
 {
 	const FVector CenterRest = Body->Origin + FVector(I0 + 0.5, J0 + 0.5, K0 + 0.5) * Body->CellSize;
 	const float RadiusWorld = Radius * Body->CellSize;
 
-	// Par dÈfaut : position en pose de rÈfÈrence, approximative si le corps est animÈ
+	// Par d√©faut : position en pose de r√©f√©rence, approximative si le corps est anim√©
 	FVector CenterWorld = Target->GetComponentTransform().TransformPosition(CenterRest);
 
 	if (Body->IsInside(I0, J0, K0))
@@ -390,3 +479,4 @@ void UVoxelBodyComponent::DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int
 
 	DrawDebugSphere(GetWorld(), CenterWorld, RadiusWorld, 16, FColor::Blue, false, 10.f, SDPG_Foreground, 1.f);
 }
+

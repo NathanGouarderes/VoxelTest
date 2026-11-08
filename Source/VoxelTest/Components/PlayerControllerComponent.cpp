@@ -8,7 +8,7 @@
 void APlayerControllerComponent::SetupInputComponent()
 {
     Super::SetupInputComponent();
-    InputComponent->BindAction("RemoveVoxel", IE_Pressed, this, &APlayerControllerComponent::OnDestroyInput);
+    //InputComponent->BindAction("RemoveVoxel", IE_Pressed, this, APlayerControllerComponent::OnDestroyInput);
     bShowMouseCursor = true;
     bEnableClickEvents = true;
     bEnableMouseOverEvents = true;

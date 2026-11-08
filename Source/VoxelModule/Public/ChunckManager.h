@@ -231,6 +231,8 @@ public:
 	bool AreClusterChunksAllSolidNoLock(const FIntVector& ChunkOrigin, int32 NbChunk, int32 LOD) const;
 
 	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
+	void CarveVoxelsAt(const FIntVector& WorldVoxel, float RadiusMeters);
+
 
 	void TelemetryStamp(const FIntVector& Coord, double FChunkJobTelemetry::* Field, double Value);
 	void TelemetryReportAndClear(const FIntVector& Coord, int32 LOD);

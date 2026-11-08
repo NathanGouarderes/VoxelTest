@@ -32,6 +32,7 @@ public:
 	// Reconstruit l'ISM d'un os depuis InstanceGrid. Renvoie son nombre d'instances.
 	int32 RebuildBoneVisual(int32 Slot);
 	int32 CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
+	int32 CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm);
 	void DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
 
 protected:
@@ -42,6 +43,7 @@ private:
 	// ----- Partie données : client ET serveur -----
 	USkeletalMeshComponent* ResolveSkeletalTarget();
 	bool BuildInstanceData();
+
 
 	// ----- Partie affichage : jamais sur un serveur dédié -----
 	void BuildVisuals();
@@ -57,6 +59,8 @@ private:
 	TArray<int32> SlotToBoneIndex;              // slot -> indice d'os dans le mesh actuel
 	TArray<FTransform> BoneCSPerSlot;           // slot -> matrice de bind (pose de repos, repère du mesh)
 	TArray<FVoxelDataStructure> InstanceGrid;   // les voxels qui composent le personnage,	 copie modifiable propre à ce personnage
+	TArray<FIntVector> SlotMin; // boîte des cellules de chaque os, en coordonnées de grille
+	TArray<FIntVector> SlotMax;
 	double CubeScale = 1.0;
 	int32 NumAlive = 0;
 	UPROPERTY()

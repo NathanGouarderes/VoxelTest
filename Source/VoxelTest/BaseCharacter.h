@@ -56,6 +56,7 @@ public:
 	void OnPunch();
 	void OnReel(const FInputActionValue& Value);
 	FVector GetCenterEyesLooking() const;
+	AChunckManager* GetChunkManager();
 	void UpdateWebVisual(const FVector& HandCm, const FVector& AnchorCm);
 	void HideWebVisual();
 	FKiWeb GetCurrentKiWeb();
@@ -121,7 +122,6 @@ protected:
 	UPROPERTY()
 	TObjectPtr<AChunckManager> ChunkManager = nullptr;
 
-	AChunckManager* GetChunkManager();
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);

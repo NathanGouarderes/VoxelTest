@@ -2148,23 +2148,15 @@ void AChunckManager::NukeClusters()
     ClusterHasGroupTier3.Empty();
 }
 
-void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeters)
+void AChunckManager::CarveVoxelsAt(const FIntVector& WorldVoxel, float RadiusMeters)
 {
-    if (!IsValid(VoxelWorld))
-    {
-        return;
-    }
-    int32 EditCount = 0;
-
-    const double StartTime = FPlatformTime::Seconds();
-    FIntVector CenterVoxel(FMath::FloorToInt(WorldCenter.X / VoxelSize), FMath::FloorToInt(WorldCenter.Y / VoxelSize), FMath::FloorToInt(WorldCenter.Z / VoxelSize));
     FVoxelBrushOp Op;
-    Op.CenterVoxel = CenterVoxel;
+    Op.CenterVoxel = WorldVoxel;
     const int32 R = FMath::CeilToInt(RadiusMeters * 100 / VoxelSize);
     Op.RadiusVoxels = R;
     Op.Seq = NextBrushSeq++;
-    const FIntVector BoxMin(CenterVoxel.X - R, CenterVoxel.Y - R, CenterVoxel.Z - R);
-    const FIntVector BoxMax(CenterVoxel.X + R, CenterVoxel.Y + R, CenterVoxel.Z + R);
+    const FIntVector BoxMin(WorldVoxel.X - R, WorldVoxel.Y - R, WorldVoxel.Z - R);
+    const FIntVector BoxMax(WorldVoxel.X + R, WorldVoxel.Y + R, WorldVoxel.Z + R);
 
     const FIntVector ChunkMin(FloorDivInt(BoxMin.X, ChunkSize),
         FloorDivInt(BoxMin.Y, ChunkSize),
@@ -2176,22 +2168,22 @@ void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeter
 
     int32 ChunksInRange = 0;
     int32 ChunksFound = 0;
-    
-        for (int32 cz = ChunkMin.Z; cz <= ChunkMax.Z; ++cz)
-            for (int32 cy = ChunkMin.Y; cy <= ChunkMax.Y; ++cy)
-                for (int32 cx = ChunkMin.X; cx <= ChunkMax.X; ++cx)
-                {
-                    ++ChunksInRange;
-                    const FIntVector CC(cx, cy, cz);
-                    {
-                        FScopeLock Lock(&VoxelWorld->ChunckMutex);
-                        const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
-                        if (!D) continue;
 
-                    }
-                    ++ChunksFound;
+    for (int32 cz = ChunkMin.Z; cz <= ChunkMax.Z; ++cz)
+        for (int32 cy = ChunkMin.Y; cy <= ChunkMax.Y; ++cy)
+            for (int32 cx = ChunkMin.X; cx <= ChunkMax.X; ++cx)
+            {
+                ++ChunksInRange;
+                const FIntVector CC(cx, cy, cz);
+                {
+                    FScopeLock Lock(&VoxelWorld->ChunckMutex);
+                    const FChunckDataStructure* D = VoxelWorld->Chuncks.Find(CC);
+                    if (!D) continue;
+
                 }
-    
+                ++ChunksFound;
+            }
+
     int32 CellsTested = 0;
     int32 CellsModified = 0;
 
@@ -2211,12 +2203,12 @@ void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeter
                     ++ChunksInRange;
 
                     const FIntVector CC(cx, cy, cz);
-                    
+
                     if (IsChunkGuaranteedEmpty(CC))
                     {
                         continue;
                     }
-                    
+
                     FChunkEditLayer& Layer = VoxelWorld->EditLayers.FindOrAdd(CC);
                     Layer.BrushOps.Add(Op);
                     ++Layer.Revision;
@@ -2229,7 +2221,7 @@ void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeter
                     }
                     ++ChunksFound;
 
-                    
+
                 }
     }   // <-- VERROU RELACHE ICI. Le dispatch qui suit le reprendrait.
 
@@ -2238,6 +2230,22 @@ void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeter
     // (cf. BuildChunkPaddedVolumeNoLock). Modifier une face invalide donc
     // aussi le mesh du voisin de ce cote.
     DispatchChunkRebuilds(TouchedChunks);
+}
+
+
+void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeters)
+{
+    if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+    int32 EditCount = 0;
+
+    const double StartTime = FPlatformTime::Seconds();
+    FIntVector CenterVoxel(WorldToVoxelGlobal(WorldCenter));
+    const int32 R = FMath::CeilToInt(RadiusMeters * 100.f / VoxelSize);
+    CarveVoxelsAt(CenterVoxel, R);
+    
 }
 
 FIntVector AChunckManager::WorldToVoxelGlobal(FVector World) const
