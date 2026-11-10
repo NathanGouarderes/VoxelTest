@@ -32,7 +32,8 @@ public:
 	// Reconstruit l'ISM d'un os depuis InstanceGrid. Renvoie son nombre d'instances.
 	int32 RebuildBoneVisual(int32 Slot);
 	int32 CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
-	int32 CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm);
+	int32 CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm,
+		int32 Pressure, int32& InOutEnergy, bool& bOutBlocked);
 	void DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int32 Radius);
 
 protected:
@@ -52,7 +53,10 @@ private:
 	// Pointeurs UObject stockés dans un UObject -> UPROPERTY obligatoire.
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> Target;
-
+	UPROPERTY(EditAnywhere, Category = "VoxelBody|Combat")
+	float FleshResistancePerCm3 = 2000.0f;
+	TArray<float> SlotToughness;
+	TArray<int32> CellsMaxIntegrity;
 	UPROPERTY()
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> MeshCubeComponents;   // indexé par slot
 

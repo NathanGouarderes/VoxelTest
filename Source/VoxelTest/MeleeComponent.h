@@ -60,6 +60,12 @@ public:
 	bool bTerrainHitThisStrike = false;
 	TArray<FStrikeSegment> PendingSegments;
 	UPROPERTY(EditAnywhere, Category = "Melee")
+	int32 StrikePressure = 5000;
+	UPROPERTY(EditAnywhere, Category = "Melee")
+	int64 StrikeEnergy = 20000000;
+	int32 RemainingEnergy;
+	bool bStrikeBlocked;
+	UPROPERTY(EditAnywhere, Category = "Melee")
 	float FistRadius = 6.0f;
 	FVector HandCur = FVector::ZeroVector;
 	FVector HandPrev = FVector::ZeroVector;

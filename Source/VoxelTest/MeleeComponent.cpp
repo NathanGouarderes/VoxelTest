@@ -74,8 +74,10 @@ void UMeleeComponent::BeginStrike(const UAnimMontage* Montage, FName SocketName,
 	WindowEnd = InWindowEnd;
 	PrevTime = InWindowStart;   // on part du début EXACT de la fenêtre
 	PrevMeshTransform = Owner->GetMesh()->GetComponentTransform();
+	RemainingEnergy = StrikeEnergy;
 	bIsStrikeActive = true;
 	bTerrainHitThisStrike = false;
+	bStrikeBlocked = false;
 	SetComponentTickEnabled(true);
 }
 
@@ -156,7 +158,7 @@ void UMeleeComponent::EndStrike()
 
 void UMeleeComponent::TestSegment(const FVector& A, const FVector& B)
 {
-	DrawDebugLine(GetWorld(), A, B, FColor::Red, false, 1.f, SDPG_Foreground, 2.f);
+	DrawDebugLine(GetWorld(), A, B, FColor::Red, false, 10.f, SDPG_Foreground, 20.f);
 	// ensuite : Sweep du terrain, puis test des corps
 }
 
@@ -262,6 +264,13 @@ void UMeleeComponent::ProcessSegments()
 	}
 
 	// Passe 2 : corps 
+
+	if (bStrikeBlocked || RemainingEnergy <= 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UMeleeComponent::ProcessSegments() --> bStrikeBlocked || RemainingEnergy <= 0"));
+		PendingSegments.Reset();
+		return;
+	}
 	for (TObjectIterator<UVoxelBodyComponent> It; It; ++It)
 	{
 		UVoxelBodyComponent* Target = *It;
@@ -272,7 +281,12 @@ void UMeleeComponent::ProcessSegments()
 		int32 Removed = 0;
 		for (const FStrikeSegment& StrikeSegment : PendingSegments)
 		{
-			Removed += Target->CarveCapsuleWorld(StrikeSegment.A, StrikeSegment.B, FistRadius);
+			Removed += Target->CarveCapsuleWorld(StrikeSegment.A, StrikeSegment.B, FistRadius, StrikePressure, RemainingEnergy, bStrikeBlocked);
+			UE_LOG(LogTemp, Warning, TEXT("UMeleeComponent::ProcessSegments() --> StrikePressure : %d, RemainingEnergy : %d, bStrikeBlocked %d"), StrikePressure, RemainingEnergy, bStrikeBlocked);
+			if (bStrikeBlocked || RemainingEnergy <= 0)
+			{
+				break;
+			}
 		}
 		if (Removed > 0)
 		{

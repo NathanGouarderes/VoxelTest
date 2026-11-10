@@ -15,6 +15,7 @@ UVoxelBodyComponent::UVoxelBodyComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
+	NathanDebug(TEXT("UVoxelBodyComponent"));
 }
 
 void UVoxelBodyComponent::BeginPlay()
@@ -23,6 +24,7 @@ void UVoxelBodyComponent::BeginPlay()
 
 	if (!Body)
 	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BeginPlay() --> !Body"));
 		return;
 	}
 
@@ -30,17 +32,23 @@ void UVoxelBodyComponent::BeginPlay()
 	Target = ResolveSkeletalTarget();
 	if (!Target)
 	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BeginPlay() --> !Target"));
+
 		return;   // la raison est déjà loguée
 	}
 
 	if (!BuildInstanceData())
 	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BeginPlay() --> !BuildInstanceData"));
+
 		return;
 	}
 
 	// 2) GARDE RÉSEAU : un serveur dédié n'affiche rien
 	if (GetNetMode() == NM_DedicatedServer)
 	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BeginPlay() --> GetNetMode() == NM_DedicatedServer"));
+
 		return;
 	}
 
@@ -134,13 +142,22 @@ bool UVoxelBodyComponent::BuildInstanceData()
 	Body->BuildRuntimeDataIfNeeded();
 	if (!Body->IsRuntimeDataBuilt())
 	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BuildInstanceData() --> !Body->IsRuntimeDataBuilt()"));
 		return false;   // l'asset a logué la raison
 	}
-
+	
 	int32 NumSlots = Body->BoneNames.Num();
+	CellsMaxIntegrity.SetNum(NumSlots);
+	if (CellsMaxIntegrity.Num() != NumSlots)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UVoxelBodyComponent::BuildInstanceData() --> CellsMaxIntegrity.Num() != NumSlots"));
+		return false;
+	}
 	DirtyBones.Init(false, NumSlots);
 	SlotMin.Init(FIntVector(MAX_int32), NumSlots);
 	SlotMax.Init(FIntVector(MIN_int32), NumSlots);
+	SlotToughness.Init(1.0f, NumSlots);
+	const double CellVolume = FMath::Pow(Body->CellSize, 3.0);
 	for (const FVoxelBodyCell& Cell : Body->Cells)
 	{
 		FIntVector& Low = SlotMin[Cell.BoneSlot];
@@ -191,6 +208,7 @@ bool UVoxelBodyComponent::BuildInstanceData()
 		{
 			continue;
 		}
+		CellsMaxIntegrity[Slot] = FMath::Max(1, FMath::RoundToInt32(FleshResistancePerCm3 * CellVolume * SlotToughness[Slot]));
 		BoneCSPerSlot[Slot] = FAnimationRuntime::GetComponentSpaceTransformRefPose(RefSkeleton, SlotToBoneIndex[Slot]);
 	}
 
@@ -381,7 +399,8 @@ int32 UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radiu
 	return NumRemoved;
 }
 
-int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm)
+int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm,
+	int32 Pressure, int32& InOutEnergy, bool& bOutBlocked)
 {
 	if (!Body || !Target)
 	{
@@ -441,18 +460,60 @@ int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVecto
 					}
 					const FVector P(I + 0.5, J + 0.5, K + 0.5);
 					const double T = (AB2 > 0.0) ? FMath::Clamp(FVector::DotProduct(P - A, AB) / AB2, 0.0, 1.0) : 0.0;
-					if (FVector::DistSquared(P, A + T * AB) > R2)
+					const FVector C = A + T * AB;                       // point de l'axe le plus proche
+					const double Dist2 = FVector::DistSquared(P, C);
+					if (Dist2 > R2)
 					{
 						continue;
 					}
-					InstanceGrid[Index].Material.Id = 0;
+					const double W = 1.0 - FMath::Sqrt(Dist2) / R;
+					FVoxelDataStructure& Cell = InstanceGrid[Index];
+					const int32 CellMaxIntegrity = CellsMaxIntegrity[Slot];
+					const int32 Damage = Cell.Flags;
+					const int32 Remaining = CellMaxIntegrity * (255 - Damage) / 255;         // énergie qu'il reste pour la détruire
+					const int32 Want = FMath::FloorToInt32(Pressure * W);                // ce que le poing inflige ici
+					const int32 Absorbed = FMath::Min3(Want, Remaining, InOutEnergy);
+					if (Absorbed <= 0)
+					{
+						if (W >= 0.5)
+						{
+							bOutBlocked = true;   // une cellule du cœur du poing n'a rien cédé
+						}
+						continue;
+					}
+
+					InOutEnergy -= Absorbed;
 					DirtyBones[Slot] = true;
-					NumRemoved++;
+					const FVector RestPos = Body->Origin + P * CellSize;    // P est en cellules
+					const FVector WorldPos = BoneWorld.TransformPosition(BoneCSPerSlot[Slot].InverseTransformPosition(RestPos));
+					DrawDebugPoint(GetWorld(), WorldPos, 6.f, FColor::Yellow, false, 5.f, SDPG_Foreground);
+					if (Absorbed >= Remaining)
+					{
+						Cell.Material.Id = 0;
+						Cell.Flags = 0;
+						NumRemoved++;
+					}
+					else
+					{
+						Cell.Flags = (uint8)FMath::Min(254, Damage + FMath::Max(1, Absorbed * 255 / CellMaxIntegrity));
+						if (W >= 0.5)
+						{
+							bOutBlocked = true;   // la cellule a tenu : le poing s'arrête là
+						}
+					}
+					if (InOutEnergy <= 0)
+					{
+						// plus d'énergie : on sort, mais on garde le réveil du Tick en dessous
+						break;
+					}
 				}
 	}
 	if (NumRemoved > 0)
 	{
 		NumAlive -= NumRemoved;
+	}
+	if (DirtyBones.Contains(true) && GetNetMode() != NM_DedicatedServer)
+	{
 		SetComponentTickEnabled(true);
 	}
 	return NumRemoved;
