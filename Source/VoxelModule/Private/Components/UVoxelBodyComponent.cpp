@@ -402,41 +402,52 @@ int32 UVoxelBodyComponent::CarveSphere(int32 I0, int32 J0, int32 K0, int32 Radiu
 int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVector& BWorld, float RadiusCm,
 	int32 Pressure, int32& InOutEnergy, bool& bOutBlocked)
 {
-	if (!Body || !Target)
+	if (!Body || !Target || InOutEnergy <= 0)
 	{
 		return 0;
 	}
 
+	// Phase large : la capsule passe-t-elle à portée du corps ?
 	const FBoxSphereBounds& Bounds = Target->Bounds;
 	if (FMath::PointDistToSegment(Bounds.Origin, AWorld, BWorld) > Bounds.SphereRadius + RadiusCm)
 	{
 		return 0;
 	}
+
+	// Garde-fou : tous les tableaux par os doivent avoir la même taille
 	const TArray<uint8>& SlotGrid = Body->GetSlotGrid();
+	const int32 NumSlots = SlotToBoneIndex.Num();
+	if (SlotMin.Num() != NumSlots || SlotMax.Num() != NumSlots || BoneCSPerSlot.Num() != NumSlots
+		|| DirtyBones.Num() != NumSlots || CellsMaxIntegrity.Num() != NumSlots
+		|| InstanceGrid.Num() != SlotGrid.Num())
+	{
+		UE_LOG(LogVoxelBody, Error, TEXT("CarveCapsuleWorld %s : tableaux incoherents | Slots=%d SlotMin=%d SlotMax=%d BoneCS=%d Dirty=%d MaxIntegrity=%d Instance=%d SlotGrid=%d"),
+			*GetNameSafe(GetOwner()), NumSlots, SlotMin.Num(), SlotMax.Num(), BoneCSPerSlot.Num(),
+			DirtyBones.Num(), CellsMaxIntegrity.Num(), InstanceGrid.Num(), SlotGrid.Num());
+		return 0;
+	}
+
 	const double CellSize = Body->CellSize;
 	const double R = RadiusCm / CellSize;   // rayon en cellules
 	const double R2 = R * R;
-	int32 NumRemoved = 0;
-	const int32 NumSlots = SlotToBoneIndex.Num();
-	if (SlotMin.Num() != NumSlots || SlotMax.Num() != NumSlots || BoneCSPerSlot.Num() != NumSlots
-		|| DirtyBones.Num() != NumSlots || InstanceGrid.Num() != Body->GetSlotGrid().Num())
-	{
-		UE_LOG(LogTemp, Error, TEXT("CarveCapsuleWorld %s : tableaux incoherents | Slots=%d SlotMin=%d SlotMax=%d BoneCS=%d Dirty=%d Instance=%d SlotGrid=%d"),
-			*GetNameSafe(GetOwner()), NumSlots, SlotMin.Num(), SlotMax.Num(), BoneCSPerSlot.Num(),
-			DirtyBones.Num(), InstanceGrid.Num(), Body->GetSlotGrid().Num());
-		return 0;
-	}
-	for (int32 Slot = 0; Slot < SlotToBoneIndex.Num(); Slot++)
+
+	// ---------- 1. COLLECTE : on ne modifie rien, on note seulement ce qui est touché ----------
+	TArray<FCellHit> Hits;
+	Hits.Reserve(1024);
+
+	for (int32 Slot = 0; Slot < NumSlots; ++Slot)
 	{
 		if (SlotToBoneIndex[Slot] == INDEX_NONE || SlotMin[Slot].X > SlotMax[Slot].X)
 		{
 			continue;   // os non résolu, ou sans aucune cellule
 		}
+
+		// Transport du segment : monde -> repère de l'os -> pose de repos -> cellules
 		const FTransform BoneWorld = Target->GetBoneTransform(SlotToBoneIndex[Slot]);
 		const FVector A = (BoneCSPerSlot[Slot].TransformPosition(BoneWorld.InverseTransformPosition(AWorld)) - Body->Origin) / CellSize;
 		const FVector B = (BoneCSPerSlot[Slot].TransformPosition(BoneWorld.InverseTransformPosition(BWorld)) - Body->Origin) / CellSize;
 
-		// 2. Boîte à parcourir = boîte de la capsule ∩ boîte de l'os
+		// Boîte à parcourir = boîte de la capsule ∩ boîte de l'os
 		const int32 I0 = FMath::Max(FMath::FloorToInt(FMath::Min(A.X, B.X) - R), SlotMin[Slot].X);
 		const int32 I1 = FMath::Min(FMath::CeilToInt(FMath::Max(A.X, B.X) + R), SlotMax[Slot].X);
 		const int32 J0 = FMath::Max(FMath::FloorToInt(FMath::Min(A.Y, B.Y) - R), SlotMin[Slot].Y);
@@ -447,77 +458,115 @@ int32 UVoxelBodyComponent::CarveCapsuleWorld(const FVector& AWorld, const FVecto
 		{
 			continue;   // la capsule ne recoupe pas cet os
 		}
-		FVector AB = B - A;
+
+		const FVector AB = B - A;
 		const double AB2 = AB.SizeSquared();
+
 		for (int32 K = K0; K <= K1; ++K)
 			for (int32 J = J0; J <= J1; ++J)
 				for (int32 I = I0; I <= I1; ++I)
 				{
-					int32 Index = Body->CellIndex(I, J, K);
+					const int32 Index = Body->CellIndex(I, J, K);
 					if (SlotGrid[Index] != Slot || InstanceGrid[Index].Material.Id == 0)
 					{
-						continue;
+						continue;   // autre os, air, ou déjà détruite
 					}
-					const FVector P(I + 0.5, J + 0.5, K + 0.5);
+
+					const FVector P(I + 0.5, J + 0.5, K + 0.5);   // centre de la cellule, en cellules
 					const double T = (AB2 > 0.0) ? FMath::Clamp(FVector::DotProduct(P - A, AB) / AB2, 0.0, 1.0) : 0.0;
-					const FVector C = A + T * AB;                       // point de l'axe le plus proche
+					const FVector C = A + T * AB;                 // point de l'axe le plus proche
 					const double Dist2 = FVector::DistSquared(P, C);
 					if (Dist2 > R2)
 					{
-						continue;
-					}
-					const double W = 1.0 - FMath::Sqrt(Dist2) / R;
-					FVoxelDataStructure& Cell = InstanceGrid[Index];
-					const int32 CellMaxIntegrity = CellsMaxIntegrity[Slot];
-					const int32 Damage = Cell.Flags;
-					const int32 Remaining = CellMaxIntegrity * (255 - Damage) / 255;         // énergie qu'il reste pour la détruire
-					const int32 Want = FMath::FloorToInt32(Pressure * W);                // ce que le poing inflige ici
-					const int32 Absorbed = FMath::Min3(Want, Remaining, InOutEnergy);
-					if (Absorbed <= 0)
-					{
-						if (W >= 0.5)
-						{
-							bOutBlocked = true;   // une cellule du cœur du poing n'a rien cédé
-						}
-						continue;
+						continue;   // hors de la capsule
 					}
 
-					InOutEnergy -= Absorbed;
-					DirtyBones[Slot] = true;
-					const FVector RestPos = Body->Origin + P * CellSize;    // P est en cellules
-					const FVector WorldPos = BoneWorld.TransformPosition(BoneCSPerSlot[Slot].InverseTransformPosition(RestPos));
-					DrawDebugPoint(GetWorld(), WorldPos, 6.f, FColor::Yellow, false, 5.f, SDPG_Foreground);
-					if (Absorbed >= Remaining)
-					{
-						Cell.Material.Id = 0;
-						Cell.Flags = 0;
-						NumRemoved++;
-					}
-					else
-					{
-						Cell.Flags = (uint8)FMath::Min(254, Damage + FMath::Max(1, Absorbed * 255 / CellMaxIntegrity));
-						if (W >= 0.5)
-						{
-							bOutBlocked = true;   // la cellule a tenu : le poing s'arrête là
-						}
-					}
-					if (InOutEnergy <= 0)
-					{
-						// plus d'énergie : on sort, mais on garde le réveil du Tick en dessous
-						break;
-					}
+					FCellHit Hit;
+					Hit.Index = Index;
+					Hit.Slot = Slot;
+					Hit.Cell = FIntVector(I, J, K);
+					Hit.T = T;
+					Hit.W = 1.0 - FMath::Sqrt(Dist2) / R;
+					Hits.Add(Hit);   // copie : Hit peut disparaître à la fin du tour
 				}
 	}
+
+	if (Hits.IsEmpty())
+	{
+		return 0;
+	}
+
+	// ---------- 2. TRI : de l'avant vers l'arrière, dans l'ordre où le poing rencontre les cellules ----------
+	Hits.Sort([](const FCellHit& L, const FCellHit& R) { return L.T < R.T; });
+
+	// ---------- 3. APPLICATION : l'énergie est dépensée d'abord sur les cellules de devant ----------
+	int32 NumRemoved = 0;
+	bool bAnyChange = false;
+
+	for (const FCellHit& H : Hits)
+	{
+		FVoxelDataStructure& Cell = InstanceGrid[H.Index];
+		const int32 MaxIntegrity = CellsMaxIntegrity[H.Slot];                // une valeur par OS
+		const int32 Damage = Cell.Flags;                                     // 0..255 : fraction déjà perdue
+		const int32 Remaining = MaxIntegrity * (255 - Damage) / 255;        // énergie qu'il reste pour la détruire
+		const int32 Want = FMath::FloorToInt32(Pressure * H.W);             // ce que le poing inflige ici
+		const int32 Absorbed = FMath::Min3(Want, Remaining, InOutEnergy);
+
+		if (Absorbed <= 0)
+		{
+			if (H.W >= 0.5)
+			{
+				bOutBlocked = true;   // une cellule du cœur n'a rien cédé : le poing s'arrête
+				break;
+			}
+			continue;                 // bord du poing : trop peu de pression, on passe
+		}
+
+		InOutEnergy -= Absorbed;
+		DirtyBones[H.Slot] = true;
+		bAnyChange = true;
+
+		if (Absorbed >= Remaining)
+		{
+			Cell.Material.Id = 0;     // détruite
+			Cell.Flags = 0;
+			++NumRemoved;
+
+			if (bDebugDrawRemovedCells)
+			{
+				// Position dans le monde, calculée seulement pour le debug
+				const FVector RestPos = Body->Origin + FVector(H.Cell.X + 0.5, H.Cell.Y + 0.5, H.Cell.Z + 0.5) * CellSize;
+				const FTransform BoneWorld = Target->GetBoneTransform(SlotToBoneIndex[H.Slot]);
+				const FVector WorldPos = BoneWorld.TransformPosition(BoneCSPerSlot[H.Slot].InverseTransformPosition(RestPos));
+				DrawDebugPoint(GetWorld(), WorldPos, 6.f, FColor::Yellow, false, 5.f, SDPG_Foreground);
+			}
+		}
+		else
+		{
+			// Au moins +1 : sinon un petit coup sur une cellule solide ne laisserait aucune trace
+			Cell.Flags = (uint8)FMath::Min(254, Damage + FMath::Max(1, Absorbed * 255 / MaxIntegrity));
+			if (H.W >= 0.5)
+			{
+				bOutBlocked = true;   // la cellule a tenu : le poing ne va pas plus loin
+				break;
+			}
+		}
+
+		if (InOutEnergy <= 0)
+		{
+			break;                    // plus d'énergie : une seule boucle, un seul break
+		}
+	}
+
 	if (NumRemoved > 0)
 	{
 		NumAlive -= NumRemoved;
 	}
-	if (DirtyBones.Contains(true) && GetNetMode() != NM_DedicatedServer)
+	if (bAnyChange && GetNetMode() != NM_DedicatedServer)
 	{
-		SetComponentTickEnabled(true);
+		SetComponentTickEnabled(true);   // la reconstruction se fera à la fin de l'image
 	}
 	return NumRemoved;
-
 }
 
 void UVoxelBodyComponent::DrawCarveDebugSphere(int32 I0, int32 J0, int32 K0, int32 Radius)

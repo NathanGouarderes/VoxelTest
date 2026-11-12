@@ -8,7 +8,7 @@ public class VoxelTest : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ProceduralMeshComponent", "VoxelModule", "EnhancedInput", "Niagara", "UMG" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ProceduralMeshComponent", "VoxelModule", "EnhancedInput", "Niagara", "UMG", "VoxelAIModule" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

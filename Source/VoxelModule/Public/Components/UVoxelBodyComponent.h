@@ -15,6 +15,15 @@ struct FBrickDelta
 	uint64 Removed[8] = {};   // 8 × 64 = 512 bits, 1 = cellule détruite
 };
 
+struct FCellHit
+{
+	int32 Index;     // position dans la grille ENTIÈRE du corps (pas relative à l'os)
+	int32 Slot;      // os auquel la cellule appartient
+	FIntVector Cell; // coordonnées I, J, K : seulement pour le debug
+	double T;        // position le long du segment : 0 en A, 1 en B
+	double W;        // 1 sur l'axe du poing, 0 au bord
+};
+
 UCLASS(ClassGroup = (Voxel), meta = (BlueprintSpawnableComponent))
 class VOXELMODULE_API UVoxelBodyComponent : public UActorComponent
 {
@@ -57,6 +66,8 @@ private:
 	float FleshResistancePerCm3 = 2000.0f;
 	TArray<float> SlotToughness;
 	TArray<int32> CellsMaxIntegrity;
+	UPROPERTY(EditAnywhere, Category = "VoxelBody|Debug")
+	bool bDebugDrawRemovedCells = true;
 	UPROPERTY()
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> MeshCubeComponents;   // indexé par slot
 

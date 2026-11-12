@@ -53,6 +53,8 @@ public:
 	void TestSegment(const FVector& A, const FVector& B);
 	void AdvanceStrike(float TargetTime);
 	void ProcessSegments();
+	void FreezeAim();
+	FVector SampleAimed(float Time) const;
 	TSharedPtr<const FStrikeTrajectory> GetOrBakeTrajectory(const UAnimMontage* Montage, FName BoneName);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Melee")
@@ -62,11 +64,23 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Melee")
 	int32 StrikePressure = 5000;
 	UPROPERTY(EditAnywhere, Category = "Melee")
-	int64 StrikeEnergy = 20000000;
+	int64 StrikeEnergy = 2000;
 	int32 RemainingEnergy;
 	bool bStrikeBlocked;
 	UPROPERTY(EditAnywhere, Category = "Melee")
 	float FistRadius = 6.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Melee|Aim")
+	FName AimPivotBone = TEXT("spine_03");
+	UPROPERTY(EditDefaultsOnly, Category = "Melee|Aim")
+	float AimPitchMin = -60.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Melee|Aim")
+	float AimPitchMax = 60.0f;
+	UPROPERTY(EditDefaultsOnly, Category = "Melee|Aim")
+	FRotator AimRotationCS;
+	UPROPERTY(EditDefaultsOnly, Category = "Melee|Aim")
+	FQuat AimQuatCS = FQuat::Identity;
+	float StrikePitch;
+	TSharedPtr<const FStrikeTrajectory> PivotTrajectory;
 	FVector HandCur = FVector::ZeroVector;
 	FVector HandPrev = FVector::ZeroVector;
 	bool bIsStrikeActive = false;

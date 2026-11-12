@@ -93,12 +93,11 @@ void AChunckManager::BeginPlay()
     TerrainConfig = MakeShared<FTerrainConfig, ESPMode::ThreadSafe>();
     FTerrainConfig& Cfg = *TerrainConfig;
     Cfg.Global.BaseHeight = 408;
-    Cfg.Global.MasterSeed = 1337;
+    Cfg.Global.MasterSeed = MasterWorldSeed;
     Cfg.Global.CaveFrequency = 0.038f;
     Cfg.Global.CaveThreshold = 0.42f;
     Cfg.Global.WarpStrength = 0.0f;
     Cfg.Global.BaseHeight = BaseHeight;
-    Cfg.Global.MasterSeed = 1337;
     Cfg.Global.CaveFrequency = 0.038f;
     Cfg.Global.CaveThreshold = 0.42f;    
 

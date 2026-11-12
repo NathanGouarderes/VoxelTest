@@ -261,6 +261,8 @@ public:
 	UFUNCTION(Exec)
 	void GotoPeak();
 
+	UPROPERTY(EditAnywhere, Category = "Voxel | World")
+	int32 MasterWorldSeed = 1337;
 	double FillStartTime = 0.0;
 	bool   bFillLogged = false;
 	UPROPERTY(EditAnywhere, Category = "Voxel | Debug")

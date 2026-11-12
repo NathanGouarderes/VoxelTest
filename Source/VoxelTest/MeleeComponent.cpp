@@ -52,6 +52,7 @@ void UMeleeComponent::PunchRight()
 	{
 		return;
 	}
+	FreezeAim();
 	const float Duration = Owner->PlayAnimMontage(PunchRightMontage);
 	FVector HandPosition = Owner->GetMesh()->GetSocketLocation("hand_r");
 	UE_LOG(LogTemp, Log, TEXT("Punch : duree = %.2f s"), Duration);
@@ -70,6 +71,15 @@ void UMeleeComponent::BeginStrike(const UAnimMontage* Montage, FName SocketName,
 	{
 		return;
 	}
+	PivotTrajectory = GetOrBakeTrajectory(Montage, AimPivotBone);
+	if (!PivotTrajectory)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UMeleeComponent::BeginStrike : pas de trajectoire pour le pivot %s"), *AimPivotBone.ToString());
+		return;
+	}
+	ensureMsgf(InWindowStart >= Montage->GetDefaultBlendInTime(),
+		TEXT("BeginStrike : la fenetre (%.3f s) commence avant la fin du blend-in (%.3f s)"),
+		InWindowStart, Montage->GetDefaultBlendInTime());
 	StrikeMontage = Montage;
 	WindowEnd = InWindowEnd;
 	PrevTime = InWindowStart;   // on part du début EXACT de la fenêtre
@@ -94,7 +104,7 @@ void UMeleeComponent::TickStrike()
 		return;
 	}
 	const float Now = Anim->Montage_GetPosition(StrikeMontage);
-	const FVector Baked = Owner->GetMesh()->GetComponentTransform().TransformPosition(Trajectory->SampleAt(Now));
+	const FVector Baked = Owner->GetMesh()->GetComponentTransform().TransformPosition(SampleAimed(Now));
 	const FVector Real = Owner->GetMesh()->GetSocketLocation("hand_r");   // "hand_r"
 	UE_LOG(LogTemp, Log, TEXT("Ecart bake/reel = %.2f cm"), FVector::Dist(Baked, Real));
 	AdvanceStrike(FMath::Min(Anim->Montage_GetPosition(StrikeMontage), WindowEnd));
@@ -122,13 +132,13 @@ void UMeleeComponent::AdvanceStrike(float TargetTime)
 	const float Span = TargetTime - PrevTime;
 	const float Step = 1.f / Trajectory->SampleRate;
 
-	FVector A = PrevMeshTransform.TransformPosition(Trajectory->SampleAt(PrevTime));
+	FVector A = PrevMeshTransform.TransformPosition(SampleAimed(PrevTime));
 	for (float T = PrevTime + Step; ; T += Step)
 	{
 		const float Tc = FMath::Min(T, TargetTime);
 		FTransform Mesh;
 		Mesh.Blend(PrevMeshTransform, MeshNow, (Tc - PrevTime) / Span);   // le personnage a bougé entre les deux ticks
-		const FVector B = Mesh.TransformPosition(Trajectory->SampleAt(Tc));
+		const FVector B = Mesh.TransformPosition(SampleAimed(Tc));
 		PendingSegments.Add({A,B});
 		A = B;
 		if (Tc >= TargetTime)
@@ -151,6 +161,7 @@ void UMeleeComponent::EndStrike()
 	}
 	bIsStrikeActive = false;
 	Trajectory.Reset();
+	PivotTrajectory.Reset();
 	StrikeMontage = nullptr;
 	SetComponentTickEnabled(false);
 	UE_LOG(LogTemp, Log, TEXT("EndStrike"));
@@ -295,4 +306,30 @@ void UMeleeComponent::ProcessSegments()
 	}
 
 	PendingSegments.Reset();   // vide le tableau sans libérer sa mémoire
+}
+
+void UMeleeComponent::FreezeAim()
+{
+	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
+	if (!Owner)
+	{
+		UE_LOG(LogTemp, Error, TEXT("UMeleeComponent::FreezeAim() --> !Owner"));
+		return;
+	}
+
+	const float RawPitch = Owner->GetBaseAimRotation().Pitch;
+	StrikePitch = FMath::Clamp(FRotator::NormalizeAxis(RawPitch), AimPitchMin, AimPitchMax);
+	FQuat PitchAchor = FRotator(StrikePitch, 0.0f, 0.0f).Quaternion();
+	const FQuat MeshRel = Owner->GetMesh()->GetRelativeRotation().Quaternion();
+	AimQuatCS = MeshRel.Inverse() * PitchAchor * MeshRel;
+	AimRotationCS = AimQuatCS.Rotator();
+	UE_LOG(LogTemp, Log, TEXT("FreezeAim : brut=%.1f fige=%.1f"), RawPitch, StrikePitch);
+}
+
+
+FVector UMeleeComponent::SampleAimed(float Time) const
+{
+	const FVector Hand = Trajectory->SampleAt(Time);
+	const FVector Pivot = PivotTrajectory->SampleAt(Time);
+	return Pivot + AimQuatCS.RotateVector(Hand - Pivot);
 }
