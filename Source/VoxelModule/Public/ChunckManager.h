@@ -105,6 +105,64 @@ public:
 	void ApplyClusterVolumeMesh(FIntVector ClusterCoord, int32 LOD, FChunckMeshData&& MeshData);
 
 
+
+
+
+
+
+/***************** à ajouter ******************************************************/
+Dans le terrainGenerator : 
+
+Nouvelle struct FVoxelEditJournal.h
+#pragma once                                                    // le header n'est inclus qu'une fois par unite de compilation
+
+#include "CoreMinimal.h"                                        // types de base d'Unreal
+#include "Net/Serialization/FastArraySerializer.h"              // FFastArraySerializer (module NetCore)
+#include "Structs/FChunkEditLayer.h"                            // FVoxelBrushOp : adapte si ta struct est declaree ailleurs
+#include "FVoxelEditJournal.generated.h"  
+class AChunckManager;
+
+USTRUCT()
+struct FVoxelEditEntry : public FFastArraySerializerItem
+{
+	GENERATED_BODY()
+	UPROPERTY()
+	FVoxelBrushOp Op;
+};
+
+USTRUCT()
+struct FVoxelEditJournal : public FFastArraySerializer
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FVoxelEditEntry> Item;
+	UPROPERTY(NotReplicated)
+	TObjectPtr<AChunckManager> LocalChunkManager = nullptr;
+
+	void PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize);
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParams)
+	{
+		return FFastArraySerialiser::FastArrayDeltaSerialize<FVoxelEditEntry, FVoxelEditJournal>(Itemps, DeltaParams, *this);
+	}
+};
+
+template<>
+struct TStructOpTypeTraits<FVoxelEditJournal> : public TStructOpsTypeTraits<FVoxelEditJournal>
+{
+		enum { WithNetDeltaSerializer = true };                     // active NetDeltaSerialize
+};
+
+/**********************************************************************************/
+
+
+
+
+
+
+
+
+
 	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
 
 	FIntVector WorldToVoxelGlobal(FVector World);
