@@ -218,8 +218,137 @@ void AChunckManager::CarveSphereVoxels(const FIntVector& CenterVoxel, int32 Radi
 	Op.RadiusVoxels = RadiusVoxels;
 	Op.MaterialId = 0;
 	Op.Seq = NextSeqBrush++;
+
+	ApplyBrushOpToWorld(Op); // le serveur applique tout de suite (collision a jour)
+	VoxelEditEntry& Entry = EditJournal.Items.AddDefaulted_GetRef(); // nouvelle ligne au journal, par reference
+	Entry.Op = Op;
+	EditJournal.MarkItemDirty(Entry); //OBLIGATOIRE : sans ca, le moteur ne voit pas la ligne
 }
 
+void AChunckManager::ApplyBrushOpToWorld(const FVoxelBrushOp& Op)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(Voxel_ApplyBrushOpToWorld);
+	 if (!IsValid(VoxelWorld))
+    {
+        return;
+    }
+	const FIntVector& OpCoord = Op.CenterVoxel;
+	const int32 OpRadius = Op.RadiusVoxels;
+	const FIntVector ChunkMin(FloorDivInt(OpCoord.X - OpRadius, ChunkSize), FloorDivInt(OpCoord.Y - OpRadius, ChunkSize), FloorDivInt(OpCoord.Z - OpRadius, ChunkSize));
+    const FIntVector ChunkMax(FloorDivInt(OpCoord.X + OpRadius, ChunkSize), FloorDivInt(OpCoord.Y + OpRadius, ChunkSize), FloorDivInt(OpCoord.Z + OpRadius, ChunkSize));
+    const int64 OpRadius2 = (int64)OpRadius * (int64)OpRadius;
+	TMap<FIntVector, int32> TouchedChunks;
+	{
+		FScopeLock Lock(VoxelWorld->ChunckMutex);
+		 for (int32 cz = ChunkMin.Z; cz <= ChunkMax.Z; ++cz)     // parcours de la boite, chunk par chunk
+            for (int32 cy = ChunkMin.Y; cy <= ChunkMax.Y; ++cy)
+                for (int32 cx = ChunkMin.X; cx <= ChunkMax.X; ++cx)
+				{
+					const FIntVector CC(cx, cy, cz);
+					if(IsChunkGuarenteedEmpty(CC))
+					{
+						continue;
+					}
+					const int32 MinY = cy * ChunkSize, MaxY = MinY + ChunkSize - 1;   // en Y
+                    const int32 MinZ = cz * ChunkSize, MaxZ = MinZ + ChunkSize - 1;   // en Z
+                    const int64 DX = (C.X < MinX) ? (MinX - C.X) : (C.X > MaxX ? C.X - MaxX : 0);
+                    const int64 DY = (C.Y < MinY) ? (MinY - C.Y) : (C.Y > MaxY ? C.Y - MaxY : 0);
+                    const int64 DZ = (C.Z < MinZ) ? (MinZ - C.Z) : (C.Z > MaxZ ? C.Z - MaxZ : 0);
+                    if (DX * DX + DY * DY + DZ * DZ > OpRadius2)       // la sphere ne touche pas ce chunk (coins de la boite)
+                    {
+                        continue;
+                    }
+					FChunkEditLayer& Layer = VoxelWorld->EditLayers.FindOrAdd(CC);
+					Layer.BrushOps.Add(Op);
+					++Layer.Revision;
+					FChunckDataStructure* Data = VoxelWorld->Chuncks.Find(CC);
+					if(!Data || Data->Voxels.Num() == 0)
+					{
+						continue;
+					}
+					 if (ApplyBrushOp(Data->Voxels.Edit(), CC, Data->LOD, ChunkSize, Op))  // modifie ses voxels a SON LOD
+                    {
+                        TouchedChunks.Add(CC, Data->LOD);       // a reconstruire
+                        Data->bIsAllSolid = false;              // la preuve "plein" ne tient plus
+                    }
+				}
+	} //VERROU
+	DispatchChunkRebuilds(TouchedChunks);
+}
+
+void AChunckManager::ReceiveReplicatedBrushOp(const FVoxelBrushOp& Op)
+{
+	if (HasAuthority())                                         // le serveur a deja applique dans CarveSphereVoxels
+    {
+        return;                                                 // garde de securite : ne jamais appliquer deux fois
+    }
+    if (Op.Seq < NextSeqToApply)                                // deja applique (ligne recue deux fois)
+    {
+        return;
+    }
+	PendingReplicatedOps.Add(Op.Seq, Op); // rangee par numero, appliquee plus tard, dans l'ordre
+}
+
+void AChunckManager::FlushReplicatedBrushOps()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(Voxel_FlushReplicatedBrushOps);
+
+    if (HasAuthority() || PendingReplicatedOps.Num() == 0)
+    {
+        return;
+    }
+    if (!IsValid(VoxelWorld)) // le journal peut arriver avant que le monde soit resolu
+    {
+        return; // on garde tout en attente, on reessaiera a la frame suivante
+    }
+	int32 Applied = 0;
+	while(Applied < MaxReplicatedOpPerFrame)
+	{
+		FVoxelBrushOp Op;
+		if (!PendingReplicatedOps.RemoveAndCopyValue(NextSeqToApply, Op))
+        {
+            break;
+        }
+		ApplyBrushOpToWorld(Op);
+		++NextSeqToAppy;
+		++Applied;
+	}
+}
+
+DANS FVoxelEditJournal.h ou cpp au choix
+void FVoxelEditJournal::PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize)
+{
+	if(!LocalChunkManager)
+	{
+		return;
+	}
+	for(const int32 Index : AddedIndices)
+	{
+		if(Item.IsValidIndex(Index)
+		{
+			LocalChunkManager->ReceiveReplicatedBrushOp(Items[Index].Op);
+		}
+	}
+}
+
+
+Dans ABaseCharacter.cpp
+void ABaseCharacter::CarveSphereServer_Implementation(float Radius)
+{
+	constexpr float MaxCarveRadiusMeters = 50.f;               
+    AChunckManager* Manager = GetChunkManager();            
+    if (!Manager)                                             
+    {
+        return;
+    }
+    const float Clamped = FMath::Min(Radius, MaxCarveRadiusMeters);
+    Manager->CarveSphereAt(GetCenterEyesLooking(), Clamped);
+}
+
+bool ABaseCharacter::CarveSphereServer_Validate(float Radius)
+{
+    return FMath::IsFinite(Radius) && Radius > 0.f;
+}
 /**********************************************************************************/
 
 
