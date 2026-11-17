@@ -153,6 +153,73 @@ struct TStructOpTypeTraits<FVoxelEditJournal> : public TStructOpsTypeTraits<FVox
 		enum { WithNetDeltaSerializer = true };                     // active NetDeltaSerialize
 };
 
+
+
+
+Dans le ChunckManager.h
+
+#include "Structs/FVoxelEditJournal.h"
+
+	// Declare au moteur quelles proprietes de cet acteur sont repliquees.
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const orverride;
+	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters); //SERVEUR : Point d'entree en metres, puis délégue
+	void CarveSphereVoxel(const FIntVector& CenterWorld, int32 RadiusVoxel); //SERVEUR : Décide, crée l'opération, la numérote, l'applique et l'écrit dans le journal
+	void ApplyBrushOpToWorld(const FVoxelBrushOp& Op); //TOUTES LES MACHINES : Applique l'opération décidée dans CarveSphereVoxel (couche d'édition, voxels chargées, et rebuild données)
+	void ReveiveReplecatedBrushOp(const FVoxelBrushOp& Op); //CLIENT : Appelee par le journal a la reception : range l'operation, ne l'applique pas encore.
+	UPROPERTY(Replicated)
+	FVoxelEditJournal EditJournal;
+	UPROPERTY(EditAnywhere, Category = "Voxel | Network", meta = (ClampMin = "1"))
+	int32 MaxReplicatedOpPerFrame = 16;
+
+en private :
+	void FlushReplicatedOpBrush();	//CIENT : Applique dans l'ordre des Seq ce qui est prêt et est appélé chaque Tick
+	TMap<int32, FVoxelBrushOp> PendingReplicatedOps; //CLIENT : Opérations reçues mais pas encore appliquées
+	int32 NextSeqToApply = 0; //Client Prochaine Seq à appliquer. DOIT valoir la vaneul initiale de NextBrushSeq sur le serveur donc si dans le header de FVoxelBrushOp NextBrushSeq = 0 ici NextSeqToApply = 0;
+
+dans le chunckmanager.cpp
+#include "Net/UnrealNetwork.h"
+
+Constructeur :
+
+	bReplicates = true; // sans ca, aucune propriete de cet acteur ne part sur le reseau
+    bAlwaysRelevant = true; // pertinent pour TOUS les clients, a toute distance (sinon coupe a 150 m)
+    EditJournal.LocalChunkManager = this; // le journal saura quel manager prevenir a la reception
+
+Dans Tick, juste après ResolveVoxelWorldIfNeeded(); :
+	FlushReplicatedOpBrush();
+Les fonctions, qui remplacent l’ancien CarveVoxelsAt et l’ancien CarveSphereAt :
+void AChunckManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty> OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AChunckManager, EditJournal);  //Le journal est envoye a tous les clients
+}
+void AChunckManager::CarveSphereAt(const FVector& WorldCenter, float RadiusMeters)
+{
+	const FIntVector CenterVoxel = WorldToVoxelGlobal(WorldCenter);
+	const int32 RadiusVoxels = FMath::Max(1, FMath::CeilToInt(RadiusMeters * 100.f / VoxelSize));
+	CarveSpereVoxels(CenterVoxel, RadiusVoxels);
+}
+
+void AChunckManager::CarveSphereVoxels(const FIntVector& CenterVoxel, int32 RadiusVoxels)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(Voxel_CarveSphereVoxels);
+	if(!HasAuthority())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CarveSphereVoxels appele sans autorite : ignore (passe par un RPC serveur)"));
+        return;
+	}
+	if (!IsValid(VoxelWorld) || RadiusVoxels <= 0)
+    {
+        return;
+    }
+	FVoxelBrusOp Op;
+	Op.Type = EVoxelBrushType::Sphere;
+	Op.Center = CenterVoxel;
+	Op.RadiusVoxels = RadiusVoxels;
+	Op.MaterialId = 0;
+	Op.Seq = NextSeqBrush++;
+}
+
 /**********************************************************************************/
 
 
@@ -163,7 +230,6 @@ struct TStructOpTypeTraits<FVoxelEditJournal> : public TStructOpsTypeTraits<FVox
 
 
 
-	void CarveSphereAt(const FVector& WorldCenter, float RadiusMeters);
 
 	FIntVector WorldToVoxelGlobal(FVector World);
 	FIntVector VoxelGlobalToChunk(FIntVector VoxelLocation);
