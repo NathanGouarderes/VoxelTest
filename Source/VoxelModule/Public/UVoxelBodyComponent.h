@@ -24,6 +24,20 @@ struct FCellHit
 	double W;        // 1 sur l'axe du poing, 0 au bord
 };
 
+struct FVoxelBodyEditEntry
+{
+	
+};
+
+struct FVoxelBodyEditJournal
+{
+	TArray<TPair<FIntVector, FIntVector>> Segments;
+	int32 HitRadius;
+	int32 EnergyIn;
+	int32 StrikePressure;
+	int32 Seq;
+};
+
 UCLASS(ClassGroup = (Voxel), meta = (BlueprintSpawnableComponent))
 class VOXELMODULE_API UVoxelBodyComponent : public UActorComponent
 {
