@@ -23,20 +23,83 @@ struct FCellHit
 	double T;        // position le long du segment : 0 en A, 1 en B
 	double W;        // 1 sur l'axe du poing, 0 au bord
 };
-
-struct FVoxelBodyEditEntry
+************************************************************************************************************************************************
+#pragma once
+	#include "CoreMinimal.h"
+	#include "Net/Serialization/FastArraySerializer.h"
+class UVoxelBodyComponent;
+USTRUCT()
+struct FVoxelBodySegment
 {
-	
+	GENERATED_BODY()
+	UPROPERTY()
+	FIntVector A = FIntVector::ZeroValue;
+	UPROPERTY()
+	FIntVector B = FIntVector::ZeroValue;
 };
 
-struct FVoxelBodyEditJournal
+USTRUCT()
+struct FVoxelBodyEditEntry : public FFastArraySerializerItem
 {
-	TArray<TPair<FIntVector, FIntVector>> Segments;
-	int32 HitRadius;
-	int32 EnergyIn;
-	int32 StrikePressure;
-	int32 Seq;
+	GENERATED_BODY()
+	UPROPERTY()
+	TArray<FVoxelBodySegment> VoxelBodySegment;
+	UPROPERTY()
+	int32 HitRadius = 0;
+	UPROPERTY()
+	int32 EnergyIn = 0;
+	UPROPERTY()
+	int32 StrikePressure = 0;
+	UPROPERTY()
+	int32 Seq = 0;
 };
+USTRUCT()
+struct FVoxelBodyEditJournal : public FFastArraySerializer
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FVoxelBodyEditEntry> Items;                              // les lignes du journal (repliquees)
+
+	UPROPERTY(NotReplicated)
+	TObjectPtr<UVoxelBodyComponent> TargetVoxelBody = nullptr; 
+
+	void PostReplicatedAdd(const TArrayView<int32> AddedIndices, int32 FinalSize);
+
+	// Point d'entree de la serialisation delta : le moteur l'appelle a la place de la serialisation normale.
+	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
+	{
+		// Compare l'etat connu du client a l'etat actuel et n'ecrit que la difference.
+		return FFastArraySerializer::FastArrayDeltaSerialize<FVoxelBodyEditEntry, FVoxelBodyEditJournal>(Items, DeltaParms, *this);
+	}
+};
+
+// Trait : dit au moteur "cette struct fournit son propre NetDeltaSerialize, utilise-le".
+// Sans lui, le tableau serait replique en entier a chaque changement.
+template<>
+struct TStructOpsTypeTraits<FVoxelBodyEditJournal> : public TStructOpsTypeTraitsBase2<FVoxelBodyEditJournal>
+{
+	enum { WithNetDeltaSerializer = true };                     // active NetDeltaSerialize
+};
+
+
+DANS UVoxelBodyComponent
+
+virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+void UVoxelBodyComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);    // garde les proprietes repliquees d'AActor
+    DOREPLIFETIME(UVoxelBodyComponent, VoxelBodyEditJournal);             // le journal est envoye a tous les clients
+}
+UPROPERTY(Replicated)
+FVoxelBodyEditJournal VoxelBodyEditJournal;
+int32 NextBodySeq = 0;
+SetIsReplicatedByDefault(true) dans le constructeur
+VoxelBodyEditJournal.TargetVoxelBody = this;
+
+
+************************************************************************************************************************************************
+
 
 UCLASS(ClassGroup = (Voxel), meta = (BlueprintSpawnableComponent))
 class VOXELMODULE_API UVoxelBodyComponent : public UActorComponent
