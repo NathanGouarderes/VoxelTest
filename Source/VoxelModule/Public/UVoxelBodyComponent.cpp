@@ -15,6 +15,7 @@ UVoxelBodyComponent::UVoxelBodyComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
+	SetIsReplicatedByDefault(true); //A AJOUTER
 	NathanDebug(TEXT("UVoxelBodyComponent"));
 }
 
